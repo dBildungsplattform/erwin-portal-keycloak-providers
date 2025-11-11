@@ -1,14 +1,11 @@
 package com.spsh.oidc;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
+import java.util.concurrent.Callable;
+import java.util.stream.Collectors;
 
 import org.jboss.logging.Logger;
-import org.keycloak.models.ClientSessionContext;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.ProtocolMapperModel;
-import org.keycloak.models.UserSessionModel;
-import org.keycloak.protocol.ProtocolMapperUtils;
+import org.keycloak.models.*;
 import org.keycloak.protocol.oidc.mappers.AbstractOIDCProtocolMapper;
 import org.keycloak.protocol.oidc.mappers.OIDCAccessTokenMapper;
 import org.keycloak.protocol.oidc.mappers.OIDCAttributeMapperHelper;
@@ -21,6 +18,9 @@ import com.spsh.util.ApiFetchHelper;
 
 import jakarta.ws.rs.InternalServerErrorException;
 
+import static java.lang.Integer.parseInt;
+import static org.keycloak.protocol.ProtocolMapperUtils.*;
+
 public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OIDCAccessTokenMapper, OIDCIDTokenMapper, UserInfoTokenMapper {
 
 
@@ -32,15 +32,22 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
     private static final List<ProviderConfigProperty> configProperties = new ArrayList<>();
     private static final Logger LOGGER = Logger.getLogger(SpshApiOidcMapper.class);
 
+
+    public static final String TIMEOUT_MS = "timeoutMs";
+    public static final String CACHE_TTL_SECONDS = "cacheTtlSeconds";
+    public static final String FAIL_MODE = "failMode";
+    public static final String AUTH_HEADER_NAME = "authHeaderName";
+
     static {
         OIDCAttributeMapperHelper.addTokenClaimNameConfig(configProperties);
         OIDCAttributeMapperHelper.addIncludeInTokensConfig(configProperties, SpshApiOidcMapper.class);
+        OIDCAttributeMapperHelper.addJsonTypeConfig(configProperties);
 
         ProviderConfigProperty multivaluedProperty = new ProviderConfigProperty();
-        multivaluedProperty.setName(ProtocolMapperUtils.MULTIVALUED);
-        multivaluedProperty.setLabel(ProtocolMapperUtils.MULTIVALUED_LABEL);
+        multivaluedProperty.setName(MULTIVALUED);
+        multivaluedProperty.setLabel(MULTIVALUED_LABEL);
         multivaluedProperty.setType(ProviderConfigProperty.BOOLEAN_TYPE);
-        multivaluedProperty.setHelpText(ProtocolMapperUtils.MULTIVALUED_HELP_TEXT);
+        multivaluedProperty.setHelpText(MULTIVALUED_HELP_TEXT);
         configProperties.add(multivaluedProperty);
 
         ProviderConfigProperty fetchUrlProperty = new ProviderConfigProperty();
@@ -63,6 +70,8 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
         ignoreMissingPathProperty.setType(ProviderConfigProperty.BOOLEAN_TYPE);
         ignoreMissingPathProperty.setHelpText("If JSON Path cannot be found in response received from Backend, do not throw an error, just ignore it.");
         configProperties.add(ignoreMissingPathProperty);
+
+
     }
 
     @Override
@@ -91,49 +100,147 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
     }
 
     @Override
-    protected void setClaim(IDToken token, ProtocolMapperModel mappingModel,
-      UserSessionModel userSession, KeycloakSession keycloakSession,
-      ClientSessionContext clientSessionCtx) {
-        String fetchUrl = mappingModel.getConfig().get(FETCH_URL);
-        String extractJsonPath = mappingModel.getConfig().get(EXTRACT_JSON_PATH);
-        boolean ignoreMissingPath = Boolean.parseBoolean(mappingModel.getConfig().getOrDefault(IGNORE_MISSING_PATH, "false"));
-        String userSub = userSession.getUser().getId();
+    protected void setClaim(IDToken token,
+                            ProtocolMapperModel mappingModel,
+                            UserSessionModel userSession,
+                            KeycloakSession keycloakSession,
+                            ClientSessionContext clientSessionCtx) {
 
-        LOGGER.info(String.format("Setting claims via custom SpshApiOidcMapper for userSub: %s", userSub));
-        LOGGER.debug(String.format("Using fetchUrl: %s", fetchUrl));
-        LOGGER.debug(String.format("Using extractJsonPath: %s", extractJsonPath));
-        LOGGER.debug(String.format("Using userSub: %s", userSub));
+        final Map<String, String> cfg = mappingModel.getConfig();
 
-        if (fetchUrl == null) {
-            LOGGER.warn("SpshApiOidcMapper: fetchUrl is null. No data will be fetched, extracted and mapped.");
+        final String fetchUrl        = cfg.get(FETCH_URL);
+        final String jsonPath        = cfg.get(EXTRACT_JSON_PATH);
+        final boolean ignoreMissing  = Boolean.parseBoolean(cfg.getOrDefault(IGNORE_MISSING_PATH, "false"));
+        final boolean multivalued    = Boolean.parseBoolean(cfg.getOrDefault(MULTIVALUED, "false"));
+        final String  failMode       = cfg.getOrDefault(FAIL_MODE, "deny");
+        final int     timeoutMs      = parseInt(cfg.getOrDefault(TIMEOUT_MS, "1500"));
+        final int     cacheTtlSec    = parseInt(cfg.getOrDefault(CACHE_TTL_SECONDS, "60"));
+        final String  headerName     = cfg.getOrDefault(AUTH_HEADER_NAME, "api-key");
+
+
+        final var user = (userSession != null) ? userSession.getUser() : null;
+        if (user == null) return;
+        final String userId = user.getId();
+        if (isBlank(fetchUrl) || isBlank(jsonPath) || isBlank(userId)) {
+            LOGGER.warn("SpshApiOidcMapper: missing fetchUrl/extractJsonPath/userId; skipping.");
             return;
         }
-        if (extractJsonPath == null) {
-            LOGGER.warn("SpshApiOidcMapper: extractJsonPath is null. No data will be fetched, extracted and mapped.");
-            return;
-        }
-        if (userSub == null) {
-            LOGGER.warn("SpshApiOidcMapper: userSub is null. No data will be fetched, extracted and mapped.");
-            return;
-        }
+
+        final var kcClientSession = clientSessionCtx.getClientSession();
+        final var clientModel     = kcClientSession.getClient();
+        final String clientId     = safe(clientModel::getClientId);
+        String clientName         = safe(clientModel::getName);
+
+        if (isBlank(clientName)) clientName = clientId;
+
+        final String cacheValKey = "spsh_mapper_cache_value_" + mappingModel.getId();
+        final String cacheTsKey  = "spsh_mapper_cache_ts_" + mappingModel.getId();
 
         try {
-            String responseData = ApiFetchHelper.fetchApiData(fetchUrl, userSub);
-            boolean isExisting = ApiFetchHelper.isPathExisting(responseData, extractJsonPath);
-            if(!isExisting && ignoreMissingPath) {
-                LOGGER.info(String.format("Ignoring due to configuration that JSON Path %s does not exist in response", extractJsonPath));
-                return;
+            String cached = userSession.getNote(cacheValKey);
+            String ts = userSession.getNote(cacheTsKey);
+            long now = System.currentTimeMillis();
+            if (cached != null && ts != null) {
+                try {
+                    long fetchedAt = Long.parseLong(ts);
+                    if ((now - fetchedAt) <= cacheTtlSec * 1000L) {
+                        Object v = extractValueOrHandleMissing(cached, jsonPath, ignoreMissing, failMode);
+                        if (v != null || ignoreMissing) {
+                            mapValue(token, mappingModel, v, multivalued);
+                            return;
+                        }
+                    }
+                } catch (Exception e) {
+                    LOGGER.debug("Cache parse/expiry failed; fetching fresh.", e);
+                }
             }
-            if(!isExisting && !ignoreMissingPath) {
-                throw new InternalServerErrorException(String.format("JSON Path %s does not exist in response: %s", extractJsonPath, responseData));
+
+            String json = ApiFetchHelper.fetchApiData(
+                    fetchUrl, userId, clientId, clientName, headerName, timeoutMs
+            );
+            Object value = extractValueOrHandleMissing(json, jsonPath, ignoreMissing, failMode);
+
+            if (value == null && ignoreMissing) return;
+            assignRoleToUser(user, clientSessionCtx, value);
+            mapValue(token, mappingModel, value, multivalued);
+
+            try {
+                userSession.setNote(cacheValKey, json);
+                userSession.setNote(cacheTsKey, Long.toString(System.currentTimeMillis()));
+            } catch (Exception e) {
+                LOGGER.debug("Failed to write session cache.", e);
             }
-            Object extractedValue = ApiFetchHelper.extractFromJson(responseData, extractJsonPath);
-            if (extractedValue != null) {
-                OIDCAttributeMapperHelper.mapClaim(token, mappingModel, extractedValue);
-            }
+
         } catch (Exception e) {
-            e.printStackTrace();
+            if ("deny".equalsIgnoreCase(failMode)) {
+                LOGGER.error("SpshApiOidcMapper: backend fetch/mapping failed; denying token issuance.", e);
+                throw (e instanceof InternalServerErrorException)
+                        ? (InternalServerErrorException) e
+                        : new InternalServerErrorException("SpshApiOidcMapper failed", e);
+            } else {
+                LOGGER.warn("SpshApiOidcMapper: backend fetch/mapping failed; skipping claim per failMode=allowNoClaim.", e);
+            }
+        }
+    }
+
+    /* Helper classes for data manipulation */
+
+    private static boolean isBlank(String s) { return s == null || s.isBlank(); }
+
+    private static <T> T safe(Callable<T> c) {
+        try { return c.call(); } catch (Exception e) { return null; }
+    }
+
+    private static Object extractValueOrHandleMissing(String json, String jsonPath, boolean ignoreMissing, String failMode) {
+        boolean exists = ApiFetchHelper.isPathExisting(json, jsonPath);
+        if (!exists) {
+            if (ignoreMissing) return null;
+            if ("deny".equalsIgnoreCase(failMode)) {
+                throw new InternalServerErrorException("JSONPath " + jsonPath + " not found in backend response.");
+            }
+            LOGGER.warnf("JSONPath %s not found; skipping per failMode=allowNoClaim.", jsonPath);
+            return null;
+        }
+        Object jsonValue = ApiFetchHelper.extractFromJson(json, jsonPath);
+        if (jsonValue instanceof Collection<?> col) {
+            jsonValue = col.stream().filter(Objects::nonNull).collect(Collectors.toList());
+        }
+        return jsonValue;
+    }
+
+    private static void mapValue(IDToken token, ProtocolMapperModel model, Object value, boolean multivalued) {
+        if (value == null) return;
+        Object mapped = value;
+        if (multivalued && !(value instanceof Collection<?>)) mapped = List.of(value);
+        if (!multivalued && (value instanceof Collection<?> col)) {
+            mapped = col.stream().filter(Objects::nonNull).findFirst().orElse(null);
+            if (mapped == null) return;
         }
 
+        OIDCAttributeMapperHelper.mapClaim(token, model, mapped);
     }
+
+
+    private static void assignRoleToUser(UserModel user,
+                                         ClientSessionContext clientCtx,
+                                         Object value) {
+        if (value == null) return;
+
+        String roleName = value.toString().trim();
+        if (roleName.isEmpty()) return;
+
+        ClientModel client = clientCtx.getClientSession().getClient();
+        RoleModel role = client.getRole(roleName);
+
+        if (role == null) {
+            LOGGER.warnf("Role '%s' not found in client '%s'; skipping.", roleName, client.getClientId());
+            return;
+        }
+
+        if (!user.hasRole(role)) {
+            user.grantRole(role);
+            LOGGER.infof("Granted role '%s' to user '%s'.", roleName, user.getUsername());
+        }
+    }
+
 }
