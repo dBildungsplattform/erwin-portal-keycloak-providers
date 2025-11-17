@@ -6,6 +6,7 @@ import java.util.stream.Collectors;
 
 import com.spsh.oidc.dto.FetchUrlResponse;
 import com.spsh.util.JsonHelper;
+import jakarta.ws.rs.NotFoundException;
 import org.jboss.logging.Logger;
 import org.keycloak.models.*;
 import org.keycloak.protocol.oidc.mappers.AbstractOIDCProtocolMapper;
@@ -109,7 +110,7 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
                             ProtocolMapperModel mappingModel,
                             UserSessionModel userSession,
                             KeycloakSession keycloakSession,
-                            ClientSessionContext clientSessionCtx) throws IllegalArgumentException{
+                            ClientSessionContext clientSessionCtx) throws IllegalArgumentException, NotFoundException {
 
         final Map<String, String> config = mappingModel.getConfig();
 
@@ -133,15 +134,15 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
 
         if (fetchUrl == null) {
             LOGGER.warn("SpshApiOidcMapper: fetchUrl is null. No data will be fetched, extracted and mapped.");
-            return;
+            throw new NotFoundException("SpshApiOidcMapper: fetchUrl is null. No data will be fetched, extracted and mapped.");
         }
         if (jsonPath == null) {
             LOGGER.warn("SpshApiOidcMapper: jsonPath is null. No data will be fetched, extracted and mapped.");
-            return;
+            throw new NotFoundException("SpshApiOidcMapper: jsonPath is null. No data will be fetched, extracted and mapped.");
         }
         if (userId == null) {
             LOGGER.warn("SpshApiOidcMapper: userId is null. No data will be fetched, extracted and mapped.");
-            return;
+            throw new NotFoundException("SpshApiOidcMapper: userId is null. No data will be fetched, extracted and mapped.");
         }
 
         final var kcClientSession = clientSessionCtx.getClientSession();
@@ -170,6 +171,7 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
                         FetchUrlResponse response = extractValueOrHandleMissing(cached, jsonPath, ignoreMissing, failMode);
                         if (response != null || ignoreMissing) {
                             LOGGER.debug("response successfully extracted, on to mapping...");
+                            assignRoleToUser(user, clientSessionCtx, response);
                             mapValue(token, mappingModel, response);
                             LOGGER.debug("response successfully mapped, exiting");
                             return;
@@ -177,6 +179,7 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
                     }
                 } catch (Exception e) {
                     LOGGER.debug("Cache parse/expiry failed; fetching fresh.", e);
+                    throw new Exception(e);
                 }
             }
 
@@ -187,7 +190,7 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
 
             if (response == null && ignoreMissing) {
                 LOGGER.debug("no items found in the fetchUrlResponse, exiting");
-                return;
+                throw new NotFoundException("Client name does not exist");
             }
             assignRoleToUser(user, clientSessionCtx, response);
             mapValue(token, mappingModel, response);

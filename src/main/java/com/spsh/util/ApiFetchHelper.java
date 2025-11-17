@@ -2,6 +2,7 @@ package com.spsh.util;
 
 import java.io.IOException;
 
+import com.spsh.oidc.SpshApiOidcMapper;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 // (GET import kept only if you need it later)
 // import org.apache.hc.client5.http.classic.methods.HttpGet;
@@ -14,13 +15,12 @@ import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 
 import org.apache.hc.core5.util.Timeout;
-
-import com.jayway.jsonpath.JsonPath;
-import com.jayway.jsonpath.PathNotFoundException;
+import org.jboss.logging.Logger;
 
 public class ApiFetchHelper {
 
     public static final String ENV_KEY_INTERNAL_COMMUNICATION_API_KEY = "INTERNAL_COMMUNICATION_API_KEY";
+    private static final Logger LOGGER = Logger.getLogger(ApiFetchHelper.class);
 
     public static String fetchApiData(String url, String userSub) throws IOException {
 
