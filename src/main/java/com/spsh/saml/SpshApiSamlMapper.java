@@ -3,6 +3,7 @@ package com.spsh.saml;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.spsh.util.JsonHelper;
 import org.jboss.logging.Logger;
 import org.keycloak.dom.saml.v2.assertion.AttributeStatementType;
 import org.keycloak.dom.saml.v2.assertion.AttributeStatementType.ASTChoiceType;
@@ -95,7 +96,7 @@ public class SpshApiSamlMapper extends AbstractSAMLProtocolMapper implements SAM
 
         try {
             String responseData = ApiFetchHelper.fetchApiData(fetchUrl, userSub);
-            Object extractedValue = ApiFetchHelper.extractFromJson(responseData, extractJsonPath);
+            Object extractedValue = JsonHelper.extractFromJson(responseData);
             if (extractedValue != null) {
                 AttributeType samlAttribute = new AttributeType(mappingModel.getName());
                 samlAttribute.addAttributeValue(extractedValue);

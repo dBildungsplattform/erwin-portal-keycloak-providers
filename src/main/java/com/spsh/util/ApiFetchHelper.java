@@ -50,7 +50,6 @@ public class ApiFetchHelper {
 
     public static String fetchApiData(String url,
                                       String userId,
-                                      String clientId,
                                       String clientName,
                                       String headerName,
                                       int timeoutMs) throws IOException {
@@ -75,9 +74,8 @@ public class ApiFetchHelper {
             request.setHeader(header, apiKey);
 
             String payload = "{"
-                    + "\"userId\":" + jsonString(userId) + ","
-                    + "\"clientId\":" + jsonString(clientId) + ","
-                    + "\"clientName\":" + jsonString(clientName)
+                    + "\"userId\":" + JsonHelper.jsonString(userId) + ","
+                    + "\"clientName\":" + JsonHelper.jsonString(clientName)
                     + "}";
 
             request.setEntity(new StringEntity(payload));
@@ -92,26 +90,5 @@ public class ApiFetchHelper {
                 }
             });
         }
-    }
-
-    /** True if the JSONPath exists (value not null). */
-    public static boolean isPathExisting(String jsonData, String jsonPath) {
-        try {
-            JsonPath.read(jsonData, jsonPath);
-            return true;
-        } catch (PathNotFoundException e) {
-            return false;
-        }
-    }
-
-    /** Extract value at JSONPath. Arrays become java.util.List; objects are Map; scalars are String/Number/Boolean. */
-    public static Object extractFromJson(String jsonData, String jsonPath) {
-        return JsonPath.read(jsonData, jsonPath);
-    }
-
-    // --- small local helper for JSON escaping ---
-    private static String jsonString(String s) {
-        if (s == null) return "null";
-        return "\"" + s.replace("\\","\\\\").replace("\"","\\\"") + "\"";
     }
 }
