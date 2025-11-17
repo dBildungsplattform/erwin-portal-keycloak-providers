@@ -195,7 +195,7 @@ public class SpshApiOidcMapperTest {
     }
 
     @Test
-    public void setClaim_noCache_callsBackend_assignsRole_mapsClaim() throws IOException {
+    public void setClaim_noCache_callsBackend_assignsRole_mapsClaim() {
         Map<String, String> config = baseConfig();
         setupCommonMocks(config);
 
@@ -237,7 +237,7 @@ public class SpshApiOidcMapperTest {
     }
 
     @Test(expected = InternalServerErrorException.class)
-    public void setClaim_ignoreMissingTrue_pathMissing_throwsInternalServerError() throws IOException {
+    public void setClaim_ignoreMissingTrue_pathMissing_throwsInternalServerError() {
         Map<String, String> config = baseConfig();
         config.put(IGNORE_MISSING_PATH, "true");
         setupCommonMocks(config);
@@ -258,7 +258,7 @@ public class SpshApiOidcMapperTest {
     }
 
     @Test
-    public void setClaim_failModeAllowNoClaim_pathMissing_doesNotThrow() throws IOException {
+    public void setClaim_failModeAllowNoClaim_pathMissing_doesNotThrow() {
         Map<String, String> config = baseConfig();
         config.put(IGNORE_MISSING_PATH, "false");
         config.put(FAIL_MODE, "allowNoClaim");
@@ -280,7 +280,7 @@ public class SpshApiOidcMapperTest {
     }
 
     @Test
-    public void setClaim_backendIOException_failModeAllowNoClaim_skipsClaim() throws IOException {
+    public void setClaim_backendIOException_failModeAllowNoClaim_skipsClaim() {
         Map<String, String> config = baseConfig();
         config.put(FAIL_MODE, "allowNoClaim");
         setupCommonMocks(config);
@@ -301,7 +301,7 @@ public class SpshApiOidcMapperTest {
     }
 
     @Test
-    public void setClaim_roleNameBlank_skipsGrant() throws IOException {
+    public void setClaim_roleNameBlank_skipsGrant() {
         Map<String, String> config = baseConfig();
         setupCommonMocks(config);
         when(userSession.getNote(anyString())).thenReturn(null);
@@ -325,7 +325,7 @@ public class SpshApiOidcMapperTest {
     }
 
     @Test
-    public void setClaim_roleNotFound_skipsGrant() throws IOException {
+    public void setClaim_roleNotFound_skipsGrant() {
         Map<String, String> config = baseConfig();
         setupCommonMocks(config);
         when(userSession.getNote(anyString())).thenReturn(null);
@@ -350,7 +350,7 @@ public class SpshApiOidcMapperTest {
     }
 
     @Test
-    public void setClaim_userAlreadyHasRole_doesNotGrantAgain() throws IOException {
+    public void setClaim_userAlreadyHasRole_doesNotGrantAgain() {
         Map<String, String> config = baseConfig();
         setupCommonMocks(config);
         when(userSession.getNote(anyString())).thenReturn(null);
