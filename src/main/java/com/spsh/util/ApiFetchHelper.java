@@ -7,10 +7,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpRequest.BodyPublishers;
 import java.net.http.HttpResponse.BodyHandlers;
 
-import com.spsh.oidc.SpshApiOidcMapper;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
-// (GET import kept only if you need it later)
-// import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
@@ -20,13 +17,11 @@ import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 
 import org.apache.hc.core5.util.Timeout;
-import org.jboss.logging.Logger;
 import org.json.JSONObject;
 
 public class ApiFetchHelper {
 
     public static final String ENV_KEY_INTERNAL_COMMUNICATION_API_KEY = "INTERNAL_COMMUNICATION_API_KEY";
-    private static final Logger LOGGER = Logger.getLogger(ApiFetchHelper.class);
 
     public static String fetchApiData(String url, String userSub) throws IOException {
 
