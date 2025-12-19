@@ -24,8 +24,6 @@ import org.keycloak.storage.ldap.idm.query.internal.LDAPQuery;
 import org.keycloak.storage.ldap.mappers.LDAPStorageMapper;
 import org.keycloak.storage.user.SynchronizationResult;
 
-import com.spsh.util.ApiFetchHelper;
-
 public class ErwinPortalLdapStorageMapper implements LDAPStorageMapper {
 
     public static List<ProviderConfigProperty> CONFIG_PROPERTIES;
@@ -107,7 +105,7 @@ public class ErwinPortalLdapStorageMapper implements LDAPStorageMapper {
         final var ldapId = ldapUser.getUuid();
 
         try {
-            ApiFetchHelper.sendLdapUserData(uri, keycloakUserId, userName, email, firstName, lastName,
+            LdapUserRequestHelper.sendLdapUserData(uri, keycloakUserId, userName, email, firstName, lastName,
                     ldapDn, ldapId);
         } catch (final IOException e) {
             LOGGER.error("IOException occurred while sending user to ErWIn-Portal", e);
@@ -116,7 +114,7 @@ public class ErwinPortalLdapStorageMapper implements LDAPStorageMapper {
         }
     }
 
-    // unimportant
+    // empty implementations from abstract class. Not required for this plugin
     @Override
     public void close() {
 
