@@ -2,10 +2,7 @@ package com.spsh.util;
 
 import java.io.IOException;
 
-import com.spsh.oidc.SpshApiOidcMapper;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
-// (GET import kept only if you need it later)
-// import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
@@ -15,18 +12,17 @@ import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 
 import org.apache.hc.core5.util.Timeout;
-import org.jboss.logging.Logger;
 
 public class ApiFetchHelper {
 
     public static final String ENV_KEY_INTERNAL_COMMUNICATION_API_KEY = "INTERNAL_COMMUNICATION_API_KEY";
-    private static final Logger LOGGER = Logger.getLogger(ApiFetchHelper.class);
 
     public static String fetchApiData(String url, String userSub) throws IOException {
 
         String apiKey = System.getenv(ENV_KEY_INTERNAL_COMMUNICATION_API_KEY);
         if (apiKey == null || apiKey.isEmpty()) {
-            throw new IOException(String.format("Environment variable %s is not set or is empty.", ENV_KEY_INTERNAL_COMMUNICATION_API_KEY));
+            throw new IOException(String.format("Environment variable %s is not set or is empty.",
+                    ENV_KEY_INTERNAL_COMMUNICATION_API_KEY));
         }
 
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
@@ -49,14 +45,15 @@ public class ApiFetchHelper {
     }
 
     public static String fetchApiData(String url,
-                                      String userId,
-                                      String clientName,
-                                      String headerName,
-                                      int timeoutMs) throws IOException {
+            String userId,
+            String clientName,
+            String headerName,
+            int timeoutMs) throws IOException {
 
         String apiKey = System.getenv(ENV_KEY_INTERNAL_COMMUNICATION_API_KEY);
         if (apiKey == null || apiKey.isEmpty()) {
-            throw new IOException(String.format("Environment variable %s is not set or is empty.", ENV_KEY_INTERNAL_COMMUNICATION_API_KEY));
+            throw new IOException(String.format("Environment variable %s is not set or is empty.",
+                    ENV_KEY_INTERNAL_COMMUNICATION_API_KEY));
         }
 
         String header = (headerName == null || headerName.isBlank()) ? "api-key" : headerName;
@@ -66,8 +63,7 @@ public class ApiFetchHelper {
                 .setResponseTimeout(Timeout.ofMilliseconds(timeoutMs))
                 .build();
 
-        try (CloseableHttpClient httpClient =
-                     HttpClients.custom().setDefaultRequestConfig(requestConfig).build()) {
+        try (CloseableHttpClient httpClient = HttpClients.custom().setDefaultRequestConfig(requestConfig).build()) {
 
             HttpPost request = new HttpPost(url);
             request.setHeader("Content-Type", "application/json");
