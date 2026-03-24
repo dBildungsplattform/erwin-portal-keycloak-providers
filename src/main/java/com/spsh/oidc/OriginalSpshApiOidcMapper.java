@@ -34,7 +34,7 @@ public class OriginalSpshApiOidcMapper extends AbstractOIDCProtocolMapper implem
 
     static {
         OIDCAttributeMapperHelper.addTokenClaimNameConfig(configProperties);
-        OIDCAttributeMapperHelper.addIncludeInTokensConfig(configProperties, SpshApiOidcMapper.class);
+        OIDCAttributeMapperHelper.addIncludeInTokensConfig(configProperties, OriginalSpshApiOidcMapper.class);
 
         ProviderConfigProperty multivaluedProperty = new ProviderConfigProperty();
         multivaluedProperty.setName(ProtocolMapperUtils.MULTIVALUED);
