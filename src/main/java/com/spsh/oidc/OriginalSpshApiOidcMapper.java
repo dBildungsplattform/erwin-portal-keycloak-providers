@@ -30,7 +30,7 @@ public class OriginalSpshApiOidcMapper extends AbstractOIDCProtocolMapper implem
     public static final String EXTRACT_JSON_PATH = "extractJsonPath";
     public static final String IGNORE_MISSING_PATH = "ignoreMissingPath";
     private static final List<ProviderConfigProperty> configProperties = new ArrayList<>();
-    private static final Logger LOGGER = Logger.getLogger(SpshApiOidcMapper.class);
+    private static final Logger LOGGER = Logger.getLogger(OriginalSpshApiOidcMapper.class);
 
     static {
         OIDCAttributeMapperHelper.addTokenClaimNameConfig(configProperties);
