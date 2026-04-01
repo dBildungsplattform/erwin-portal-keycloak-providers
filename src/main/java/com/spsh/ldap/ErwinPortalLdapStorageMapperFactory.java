@@ -21,7 +21,7 @@ public class ErwinPortalLdapStorageMapperFactory implements LDAPStorageMapperFac
     
     @Override
     public List<ProviderConfigProperty> getConfigProperties() {
-        return ErwinPortalLdapStorageMapper.CONFIG_PROPERTIES;
+        return ErwinLdapMapperConfig.CONFIG_PROPERTIES;
     }
     
 }

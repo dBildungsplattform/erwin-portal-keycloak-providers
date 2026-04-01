@@ -2,116 +2,229 @@ package com.spsh.ldap;
 
 import java.io.IOException;
 import java.net.URI;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
 import javax.naming.AuthenticationException;
+import javax.naming.directory.SearchControls;
 
+import com.spsh.ldap.dto.*;
 import org.jboss.logging.Logger;
 import org.keycloak.common.util.MultivaluedHashMap;
 import org.keycloak.component.ComponentModel;
-import org.keycloak.models.GroupModel;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
-import org.keycloak.models.RoleModel;
-import org.keycloak.models.UserModel;
-import org.keycloak.provider.ProviderConfigProperty;
-import org.keycloak.provider.ProviderConfigurationBuilder;
+import org.keycloak.models.*;
 import org.keycloak.storage.ldap.LDAPStorageProvider;
 import org.keycloak.storage.ldap.idm.model.LDAPObject;
 import org.keycloak.storage.ldap.idm.query.internal.LDAPQuery;
+import org.keycloak.storage.ldap.idm.query.internal.LDAPQueryConditionsBuilder;
 import org.keycloak.storage.ldap.mappers.LDAPStorageMapper;
 import org.keycloak.storage.user.SynchronizationResult;
 
-public class ErwinPortalLdapStorageMapper implements LDAPStorageMapper {
+import static com.spsh.ldap.ErwinLdapMapperConfig.*;
 
-    public static List<ProviderConfigProperty> CONFIG_PROPERTIES;
+public class ErwinPortalLdapStorageMapper implements LDAPStorageMapper {
 
     private static final Logger LOGGER = Logger.getLogger(ErwinPortalLdapStorageMapper.class);
 
-    public static final String CONFIG_KEY_NEW_LDAP_USER_URL = "NEW_LDAP_USER_URL";
-    public static final String CONFIG_KEY_USERNAME_ATTR_NAME = "USERNAME_ATTR_NAME";
-    public static final String CONFIG_KEY_EMAIL_ATTR_NAME = "EMAIL_ATTR_NAME";
-    public static final String CONFIG_KEY_FIRSTNAME_ATTR_NAME = "FIRSTNAME_ATTR_NAME";
-    public static final String CONFIG_KEY_LASTNAME_ATTR_NAME = "LASTNAME_ATTR_NAME";
+    private static final LDAPQueryConditionsBuilder LDAP_QUERY_CONDITIONS_BUILDER = new LDAPQueryConditionsBuilder();
 
-    static {
-        CONFIG_PROPERTIES = ProviderConfigurationBuilder.create()
-                // Url to send a new user
-                .property()
-                .name(CONFIG_KEY_NEW_LDAP_USER_URL)
-                .label("New LDAP user url")
-                .type(ProviderConfigProperty.STRING_TYPE)
-                .required(true)
-                .add()
+    private static final DateTimeFormatter FORMATTER_STRING = DateTimeFormatter.ofPattern("yyyy'-'MM'-'dd");
 
-                // LDAP attribute for the username
-                .property()
-                .name(CONFIG_KEY_USERNAME_ATTR_NAME)
-                .label("Username LDAP Attribute")
-                .type(ProviderConfigProperty.STRING_TYPE)
-                .defaultValue("uid")
-                .add()
-
-                // LDAP attribute for the email
-                .property()
-                .name(CONFIG_KEY_EMAIL_ATTR_NAME)
-                .label("Email LDAP Attribute")
-                .type(ProviderConfigProperty.STRING_TYPE)
-                .defaultValue("mail")
-                .add()
-
-                // LDAP attribute for the first name
-                .property()
-                .name(CONFIG_KEY_FIRSTNAME_ATTR_NAME)
-                .label("First name LDAP Attribute")
-                .type(ProviderConfigProperty.STRING_TYPE)
-                .defaultValue("givenName")
-                .add()
-
-                // LDAP attribute for the last name
-                .property()
-                .name(CONFIG_KEY_LASTNAME_ATTR_NAME)
-                .label("Last name LDAP Attribute")
-                .type(ProviderConfigProperty.STRING_TYPE)
-                .defaultValue("sn")
-                .add()
-
-                .build();
-    }
+    private static final DateTimeFormatter FORMATTER_GENERALIZED_TIME = DateTimeFormatter.ofPattern("yyyyMMddHHmmss'Z'");
 
     private final MultivaluedHashMap<String, String> config;
 
+    private final LDAPStorageProvider ldapStorageProvider;
+
+    private final GroupProvider groupProvider;
+
+    private final RoleProvider roleProvider;
+
     public ErwinPortalLdapStorageMapper(KeycloakSession session, ComponentModel model) {
         this.config = model.getConfig();
+        this.ldapStorageProvider = session.getProvider(LDAPStorageProvider.class);
+        this.groupProvider = session.getProvider(GroupProvider.class);
+        this.roleProvider = session.getProvider(RoleProvider.class);
     }
 
     @Override
     public void onImportUserFromLDAP(LDAPObject ldapUser, UserModel user, RealmModel realm, boolean isCreate) {
-        final var url = config.getFirst(CONFIG_KEY_NEW_LDAP_USER_URL);
+        final var url = config.getFirst(CONFIG_KEY_SERVER_NEW_LDAP_USER_URL);
         if (url == null) {
-            LOGGER.warnf("Config variable %s is not set or is empty.", CONFIG_KEY_NEW_LDAP_USER_URL);
+            LOGGER.warnf("Config variable %s is not set or is empty.", CONFIG_KEY_SERVER_NEW_LDAP_USER_URL);
             return;
         }
 
         final var uri = URI.create(url);
-        final var keycloakUserId = user.getId();
-        final var userName = ldapUser.getAttributeAsString(config.getFirst(CONFIG_KEY_USERNAME_ATTR_NAME));
-        final var email = ldapUser.getAttributeAsString(config.getFirst(CONFIG_KEY_EMAIL_ATTR_NAME));
-        final var firstName = ldapUser.getAttributeAsString(config.getFirst(CONFIG_KEY_FIRSTNAME_ATTR_NAME));
-        final var lastName = ldapUser.getAttributeAsString(config.getFirst(CONFIG_KEY_LASTNAME_ATTR_NAME));
-        final var ldapDn = ldapUser.getDn().toString();
-        final var ldapId = ldapUser.getUuid();
+
+        final var person = extractPersonData(user, ldapUser);
+        final var schule = extractSchuleData();
+        final var klassen = extractKlassenData(ldapUser.getDn().toString());
+        final var rolle = extractRolle(ldapUser);
+        final var ldapImportData = new LdapImportData(person, schule, klassen, rolle);
+
+        applyImportDataToKeycloakUser(user, realm, ldapImportData);
 
         try {
-            LdapUserRequestHelper.sendLdapUserData(uri, keycloakUserId, userName, email, firstName, lastName,
-                    ldapDn, ldapId);
+            LdapUserRequestHelper.sendLdapUserData(uri, ldapImportData);
         } catch (final IOException e) {
             LOGGER.error("IOException occurred while sending user to ErWIn-Portal", e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    private void applyImportDataToKeycloakUser(UserModel user, RealmModel realm, LdapImportData ldapImportData) {
+        applyKlassen(user, realm, ldapImportData.klassen());
+        applyRolle(user, realm, ldapImportData.rolle().toString());
+    }
+
+    private void applyKlassen(final UserModel user, final RealmModel realm, final List<KlasseData> klassen) {
+        for (final var klasse : klassen) {
+            applyKlasse(user, realm, klasse);
+        }
+    }
+
+    private void applyKlasse(final UserModel user, final RealmModel realm, final KlasseData klasse) {
+        var groupModel = groupProvider.getGroupsStream(realm)
+                .filter(gm -> gm.getName().equals(klasse.name()))
+                .findFirst()
+                .orElseGet(() -> groupProvider.createGroup(realm, klasse.name()));
+
+        user.joinGroup(groupModel);
+    }
+
+    private void applyRolle(final UserModel user, final RealmModel realm, final String rolle) {
+        var roleModel = roleProvider.getRealmRole(realm, rolle);
+        if (roleModel == null) {
+            roleModel = roleProvider.addRealmRole(realm, rolle);
+        }
+
+        user.grantRole(roleModel);
+    }
+
+    private PersonData extractPersonData(final UserModel user, final LDAPObject ldapUser) {
+        final var keycloakUserId = user.getId();
+        final var firstName = ldapUser.getAttributeAsString(config.getFirst(CONFIG_KEY_PERSON_FIRSTNAME_ATTR));
+        final var lastName = ldapUser.getAttributeAsString(config.getFirst(CONFIG_KEY_PERSON_LASTNAME_ATTR));
+        final var email = ldapUser.getAttributeAsString(config.getFirst(CONFIG_KEY_PERSON_EMAIL_ATTR));
+        final var birthday = getBirthday(ldapUser);
+        final var ldapDn = ldapUser.getDn().toString();
+
+        return new PersonData(keycloakUserId, firstName, lastName, email, birthday, ldapDn);
+    }
+
+    private SchuleData extractSchuleData() {
+        final var schoolName = config.getFirst(CONFIG_KEY_SCHULE_NAME);
+        final var zugehoerigZu = config.getFirst(CONFIG_KEY_SCHULE_ZUGEHOERIG_ZU);
+        final var externalId = config.getFirst(CONFIG_KEY_SCHULE_EXTERNAL_ID);
+
+        return new SchuleData(schoolName, zugehoerigZu, externalId);
+    }
+
+    private List<KlasseData> extractKlassenData(final String userDn) {
+        try (final var query = new LDAPQuery(ldapStorageProvider)) {
+            final var searchBase = config.getFirst(CONFIG_KEY_KLASSE_OU);
+            final var memberAttr = config.getFirst(CONFIG_KEY_KLASSE_MEMBER_FIELD);
+            query.setSearchDn(searchBase);
+            query.setSearchScope(SearchControls.SUBTREE_SCOPE);
+            query.addWhereCondition(LDAP_QUERY_CONDITIONS_BUILDER.equal(memberAttr, userDn));
+
+            final var result = query.getFirstResult();
+
+            return query.getResultList().stream().map(ldapObject -> {
+                final var klassenName = result.getAttributeAsString(config.getFirst(CONFIG_KEY_KLASSE_NAME_ATTR));
+                final var externalClassId = result.getDn().toString();
+                return new KlasseData(klassenName, externalClassId);
+            }).toList();
+        }
+    }
+
+    private ErwinRollenArt extractRolle(final LDAPObject user) {
+        final var mappingType = config.getFirst(CONFIG_KEY_ROLLE_MAPPING_TYPE);
+        return switch (mappingType) {
+            case "Field" -> extractRolleFromField(user);
+            case "'Group memberOf" -> extractRolleFromGroupMemberOf(user);
+            case "Group member" -> extractRolleFromGroupMember(user);
+            default ->
+                    throw new IllegalStateException("Unexpected value for rolle mapping type: " + config.getFirst(CONFIG_KEY_ROLLE_MAPPING_TYPE));
+        };
+    }
+
+
+    private ErwinRollenArt extractRolleFromField(LDAPObject user) {
+        final var userRole = user.getAttributeAsString(config.getFirst(CONFIG_KEY_ROLLE_FIELD));
+
+        return mapRolle(userRole);
+    }
+
+    private ErwinRollenArt extractRolleFromGroupMemberOf(LDAPObject user) {
+        final var roleLehr = config.getList(CONFIG_KEY_ROLLE_LEHR);
+        final var roleLern = config.getList(CONFIG_KEY_ROLLE_LERN);
+        final var roleLeit = config.getList(CONFIG_KEY_ROLLE_LEIT);
+
+        final var userRole = user.getAttributeAsString(config.getFirst(CONFIG_KEY_ROLLE_FIELD));
+
+        if (roleLehr.contains(userRole)) {
+            return ErwinRollenArt.LEHR;
+        } else if (roleLern.contains(userRole)) {
+            return ErwinRollenArt.LEIT;
+        } else if (roleLeit.contains(userRole)) {
+            return ErwinRollenArt.LEIT;
+        } else {
+            return null;
+        }
+    }
+
+    private ErwinRollenArt extractRolleFromGroupMember(LDAPObject user) {
+        try (final var query = new LDAPQuery(ldapStorageProvider)) {
+            final var searchBase = config.getFirst(CONFIG_KEY_ROLLE_OU);
+            final var memberAttr = config.getFirst(CONFIG_KEY_ROLLE_FIELD);
+            query.setSearchDn(searchBase);
+            query.setSearchScope(SearchControls.SUBTREE_SCOPE);
+            query.addWhereCondition(LDAP_QUERY_CONDITIONS_BUILDER.equal(memberAttr, user.getDn()));
+
+            final var result = query.getFirstResult();
+            final var role = result.getAttributeAsString(config.getFirst(CONFIG_KEY_ROLLE_NAME_ATTR));
+
+            return mapRolle(role);
+        }
+    }
+
+    private ErwinRollenArt mapRolle(final String role) {
+        final var roleLehr = config.getFirst(CONFIG_KEY_ROLLE_LEHR);
+        final var roleLern = config.getFirst(CONFIG_KEY_ROLLE_LERN);
+        final var roleLeit = config.getFirst(CONFIG_KEY_ROLLE_LEIT);
+
+        if (role.equals(roleLehr)) {
+            return ErwinRollenArt.LEHR;
+        } else if (role.equals(roleLern)) {
+            return ErwinRollenArt.LEIT;
+        } else if (role.equals(roleLeit)) {
+            return ErwinRollenArt.LEIT;
+        } else {
+            return null;
+        }
+    }
+
+    private LocalDate getBirthday(final LDAPObject ldapUser) {
+        final var birthdayValue = ldapUser.getAttributeAsString(config.getFirst(CONFIG_KEY_PERSON_BIRTHDAY_ATTR));
+
+        if (birthdayValue == null) {
+            return null;
+        }
+
+        final var format =  switch (config.getFirst(CONFIG_KEY_PERSON_BIRTHDAY_ATTR_TYPE)) {
+            case "String" -> FORMATTER_STRING;
+            case "GeneralizedTime" -> FORMATTER_GENERALIZED_TIME;
+            default ->
+                    throw new IllegalStateException("Unexpected value for birthday attribute type: " + config.getFirst(CONFIG_KEY_PERSON_BIRTHDAY_ATTR_TYPE));
+        };
+
+        return LocalDate.parse(birthdayValue, format);
     }
 
     // empty implementations from abstract class. Not required for this plugin
@@ -127,12 +240,11 @@ public class ErwinPortalLdapStorageMapper implements LDAPStorageMapper {
 
     @Override
     public LDAPStorageProvider getLdapProvider() {
-        return null;
+        return ldapStorageProvider;
     }
 
     @Override
-    public boolean onAuthenticationFailure(LDAPObject ldapUser, UserModel user, AuthenticationException ldapException,
-            RealmModel realm) {
+    public boolean onAuthenticationFailure(LDAPObject ldapUser, UserModel user, AuthenticationException ldapException, RealmModel realm) {
         return false;
     }
 
