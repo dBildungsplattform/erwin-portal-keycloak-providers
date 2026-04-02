@@ -31,7 +31,7 @@ public class ErwinLdapMapperConfig {
 
     // Rolle
     public static final String CONFIG_KEY_ROLLE_MAPPING_TYPE = "erwin_ldap_mapper.rolle.mapping_type";
-    public static final String[] CONFIG_KEY_ROLLE_MAPPING_TYPES = {"Field", "'Group memberOf", "Group member"};
+    public static final String[] CONFIG_KEY_ROLLE_MAPPING_TYPES = {"Field", "Group memberOf", "Group member"};
     public static final String CONFIG_KEY_ROLLE_OU = "erwin_ldap_mapper.rolle.ou";
     public static final String CONFIG_KEY_ROLLE_FIELD = "erwin_ldap_mapper.rolle.field";
     public static final String CONFIG_KEY_ROLLE_NAME_ATTR = "erwin_ldap_mapper.rolle.name_attr";

@@ -4,11 +4,8 @@ import java.io.IOException;
 import java.net.URI;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.Collections;
 import java.util.List;
-import java.util.Set;
 
-import javax.naming.AuthenticationException;
 import javax.naming.directory.SearchControls;
 
 import com.spsh.ldap.dto.*;
@@ -20,12 +17,11 @@ import org.keycloak.storage.ldap.LDAPStorageProvider;
 import org.keycloak.storage.ldap.idm.model.LDAPObject;
 import org.keycloak.storage.ldap.idm.query.internal.LDAPQuery;
 import org.keycloak.storage.ldap.idm.query.internal.LDAPQueryConditionsBuilder;
-import org.keycloak.storage.ldap.mappers.LDAPStorageMapper;
-import org.keycloak.storage.user.SynchronizationResult;
+import org.keycloak.storage.ldap.mappers.AbstractLDAPStorageMapper;
 
 import static com.spsh.ldap.ErwinLdapMapperConfig.*;
 
-public class ErwinPortalLdapStorageMapper implements LDAPStorageMapper {
+public class ErwinPortalLdapStorageMapper extends AbstractLDAPStorageMapper {
 
     private static final Logger LOGGER = Logger.getLogger(ErwinPortalLdapStorageMapper.class);
 
@@ -43,11 +39,12 @@ public class ErwinPortalLdapStorageMapper implements LDAPStorageMapper {
 
     private final RoleProvider roleProvider;
 
-    public ErwinPortalLdapStorageMapper(KeycloakSession session, ComponentModel model) {
-        this.config = model.getConfig();
-        this.ldapStorageProvider = session.getProvider(LDAPStorageProvider.class);
-        this.groupProvider = session.getProvider(GroupProvider.class);
-        this.roleProvider = session.getProvider(RoleProvider.class);
+    public ErwinPortalLdapStorageMapper(ComponentModel mapperModel, LDAPStorageProvider ldapProvider) {
+        super(mapperModel, ldapProvider);
+        this.config = mapperModel.getConfig();
+        this.ldapStorageProvider = ldapProvider;
+        this.groupProvider = ldapProvider.getSession().getProvider(GroupProvider.class);
+        this.roleProvider = ldapProvider.getSession().getProvider(RoleProvider.class);
     }
 
     @Override
@@ -147,13 +144,12 @@ public class ErwinPortalLdapStorageMapper implements LDAPStorageMapper {
         final var mappingType = config.getFirst(CONFIG_KEY_ROLLE_MAPPING_TYPE);
         return switch (mappingType) {
             case "Field" -> extractRolleFromField(user);
-            case "'Group memberOf" -> extractRolleFromGroupMemberOf(user);
+            case "Group memberOf" -> extractRolleFromGroupMemberOf(user);
             case "Group member" -> extractRolleFromGroupMember(user);
             default ->
                     throw new IllegalStateException("Unexpected value for rolle mapping type: " + config.getFirst(CONFIG_KEY_ROLLE_MAPPING_TYPE));
         };
     }
-
 
     private ErwinRollenArt extractRolleFromField(LDAPObject user) {
         final var userRole = user.getAttributeAsString(config.getFirst(CONFIG_KEY_ROLLE_FIELD));
@@ -229,23 +225,8 @@ public class ErwinPortalLdapStorageMapper implements LDAPStorageMapper {
 
     // empty implementations from abstract class. Not required for this plugin
     @Override
-    public void close() {
-
-    }
-
-    @Override
     public void onRegisterUserToLDAP(LDAPObject ldapUser, UserModel localUser, RealmModel realm) {
 
-    }
-
-    @Override
-    public LDAPStorageProvider getLdapProvider() {
-        return ldapStorageProvider;
-    }
-
-    @Override
-    public boolean onAuthenticationFailure(LDAPObject ldapUser, UserModel user, AuthenticationException ldapException, RealmModel realm) {
-        return false;
     }
 
     @Override
@@ -258,33 +239,4 @@ public class ErwinPortalLdapStorageMapper implements LDAPStorageMapper {
         return delegate;
     }
 
-    @Override
-    public List<UserModel> getRoleMembers(RealmModel realm, RoleModel role, int firstResult, int maxResults) {
-        return null;
-    }
-
-    @Override
-    public List<UserModel> getGroupMembers(RealmModel realm, GroupModel group, int firstResult, int maxResults) {
-        return null;
-    }
-
-    @Override
-    public SynchronizationResult syncDataFromFederationProviderToKeycloak(RealmModel realm) {
-        return new SynchronizationResult();
-    }
-
-    @Override
-    public SynchronizationResult syncDataFromKeycloakToFederationProvider(RealmModel realm) {
-        return new SynchronizationResult();
-    }
-
-    @Override
-    public Set<String> mandatoryAttributeNames() {
-        return null;
-    }
-
-    @Override
-    public Set<String> getUserAttributes() {
-        return Collections.emptySet();
-    }
 }
