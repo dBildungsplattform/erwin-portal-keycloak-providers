@@ -5,8 +5,10 @@ import java.net.URI;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Optional;
 
 import javax.naming.directory.SearchControls;
+import javax.naming.ldap.Rdn;
 
 import com.spsh.ldap.dto.*;
 import org.jboss.logging.Logger;
@@ -76,7 +78,7 @@ public class ErwinPortalLdapStorageMapper extends AbstractLDAPStorageMapper {
 
     private void applyImportDataToKeycloakUser(UserModel user, RealmModel realm, LdapImportData ldapImportData) {
         applyKlassen(user, realm, ldapImportData.klassen());
-        applyRolle(user, realm, ldapImportData.rolle().toString());
+        applyRolle(user, realm, ldapImportData.rolle() != null ? ldapImportData.rolle().toString() : null);
     }
 
     private void applyKlassen(final UserModel user, final RealmModel realm, final List<KlasseData> klassen) {
@@ -92,15 +94,24 @@ public class ErwinPortalLdapStorageMapper extends AbstractLDAPStorageMapper {
                 .orElseGet(() -> groupProvider.createGroup(realm, klasse.name()));
 
         user.joinGroup(groupModel);
+
+        LOGGER.infof("Assigned user %s to group '%s'", user.getId(), groupModel.getName());
     }
 
     private void applyRolle(final UserModel user, final RealmModel realm, final String rolle) {
+        if (rolle == null) {
+            LOGGER.warn("Can't apply role. Value is null");
+            return;
+        }
+
         var roleModel = roleProvider.getRealmRole(realm, rolle);
         if (roleModel == null) {
             roleModel = roleProvider.addRealmRole(realm, rolle);
         }
 
         user.grantRole(roleModel);
+
+        LOGGER.infof("Granted role '%s' to user %s", rolle, user.getId());
     }
 
     private PersonData extractPersonData(final UserModel user, final LDAPObject ldapUser) {
@@ -130,11 +141,10 @@ public class ErwinPortalLdapStorageMapper extends AbstractLDAPStorageMapper {
             query.setSearchScope(SearchControls.SUBTREE_SCOPE);
             query.addWhereCondition(LDAP_QUERY_CONDITIONS_BUILDER.equal(memberAttr, userDn));
 
-            final var result = query.getFirstResult();
-
+            final var klassenNameAttr = config.getFirst(CONFIG_KEY_KLASSE_NAME_ATTR);
             return query.getResultList().stream().map(ldapObject -> {
-                final var klassenName = result.getAttributeAsString(config.getFirst(CONFIG_KEY_KLASSE_NAME_ATTR));
-                final var externalClassId = result.getDn().toString();
+                final var klassenName = readAttributeOrRdn(ldapObject, klassenNameAttr).orElse(null);
+                final var externalClassId = ldapObject.getDn().toString();
                 return new KlasseData(klassenName, externalClassId);
             }).toList();
         }
@@ -154,7 +164,7 @@ public class ErwinPortalLdapStorageMapper extends AbstractLDAPStorageMapper {
     private ErwinRollenArt extractRolleFromField(LDAPObject user) {
         final var userRole = user.getAttributeAsString(config.getFirst(CONFIG_KEY_ROLLE_FIELD));
 
-        return mapRolle(userRole);
+        return mapRolle(userRole, user.getDn().toString());
     }
 
     private ErwinRollenArt extractRolleFromGroupMemberOf(LDAPObject user) {
@@ -167,7 +177,7 @@ public class ErwinPortalLdapStorageMapper extends AbstractLDAPStorageMapper {
         if (roleLehr.contains(userRole)) {
             return ErwinRollenArt.LEHR;
         } else if (roleLern.contains(userRole)) {
-            return ErwinRollenArt.LEIT;
+            return ErwinRollenArt.LERN;
         } else if (roleLeit.contains(userRole)) {
             return ErwinRollenArt.LEIT;
         } else {
@@ -184,22 +194,28 @@ public class ErwinPortalLdapStorageMapper extends AbstractLDAPStorageMapper {
             query.addWhereCondition(LDAP_QUERY_CONDITIONS_BUILDER.equal(memberAttr, user.getDn()));
 
             final var result = query.getFirstResult();
-            final var role = result.getAttributeAsString(config.getFirst(CONFIG_KEY_ROLLE_NAME_ATTR));
+            final var roleNameAttr = config.getFirst(CONFIG_KEY_ROLLE_NAME_ATTR);
+            final var role = readAttributeOrRdn(result, roleNameAttr).orElse(null);
 
-            return mapRolle(role);
+            return mapRolle(role, user.getDn().toString());
         }
     }
 
-    private ErwinRollenArt mapRolle(final String role) {
+    private ErwinRollenArt mapRolle(final String role, String userDn) {
+        if (role == null) {
+            LOGGER.warnf("Can't map null role value. UserDn: %s", userDn);
+            return null;
+        }
+
         final var roleLehr = config.getFirst(CONFIG_KEY_ROLLE_LEHR);
         final var roleLern = config.getFirst(CONFIG_KEY_ROLLE_LERN);
         final var roleLeit = config.getFirst(CONFIG_KEY_ROLLE_LEIT);
 
-        if (role.equals(roleLehr)) {
+        if (roleLehr.equals(role)) {
             return ErwinRollenArt.LEHR;
-        } else if (role.equals(roleLern)) {
-            return ErwinRollenArt.LEIT;
-        } else if (role.equals(roleLeit)) {
+        } else if (roleLern.equals(role)) {
+            return ErwinRollenArt.LERN;
+        } else if (roleLeit.equals(role)) {
             return ErwinRollenArt.LEIT;
         } else {
             return null;
@@ -210,10 +226,11 @@ public class ErwinPortalLdapStorageMapper extends AbstractLDAPStorageMapper {
         final var birthdayValue = ldapUser.getAttributeAsString(config.getFirst(CONFIG_KEY_PERSON_BIRTHDAY_ATTR));
 
         if (birthdayValue == null) {
+            LOGGER.warnf("No birthday found for user dn '%s'", ldapUser.getDn());
             return null;
         }
 
-        final var format =  switch (config.getFirst(CONFIG_KEY_PERSON_BIRTHDAY_ATTR_TYPE)) {
+        final var format = switch (config.getFirst(CONFIG_KEY_PERSON_BIRTHDAY_ATTR_TYPE)) {
             case "String" -> FORMATTER_STRING;
             case "GeneralizedTime" -> FORMATTER_GENERALIZED_TIME;
             default ->
@@ -221,6 +238,16 @@ public class ErwinPortalLdapStorageMapper extends AbstractLDAPStorageMapper {
         };
 
         return LocalDate.parse(birthdayValue, format);
+    }
+
+    private static Optional<String> readAttributeOrRdn(final LDAPObject ldapObject, final String name) {
+        return Optional.ofNullable(ldapObject.getAttributeAsString(name))
+                .or(() -> ldapObject
+                        // Get RDNs
+                        .getDn().getLdapName().getRdns()
+                        // Filter for RDN with given name
+                        .stream().filter(rdn -> rdn.getType().equalsIgnoreCase(name)).map(Rdn::getValue).map(Object::toString)
+                        .findFirst());
     }
 
     // empty implementations from abstract class. Not required for this plugin

@@ -3,6 +3,7 @@ package com.spsh.ldap.dto;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -17,11 +18,11 @@ public record LdapImportData(PersonData person, SchuleData schule, List<KlasseDa
 
     public JSONObject toJson() {
         JSONObject json = new JSONObject();
-        json.put("person", person.toJson());
-        json.put("schule", schule.toJson());
-        json.put("rolle", rolle.toString());
+        json.put("person", person != null ? person.toJson() : null);
+        json.put("schule", schule != null ? schule.toJson() : null);
+        json.put("rolle", rolle != null ? rolle.toString() : null);
 
-        final List<JSONObject> klassenObjects = klassen.stream().map(KlasseData::toJson).toList();
+        final List<JSONObject> klassenObjects = klassen != null ? klassen.stream().map(KlasseData::toJson).toList() : Collections.emptyList();
         json.put("klassen", new JSONArray(klassenObjects));
 
         return json;

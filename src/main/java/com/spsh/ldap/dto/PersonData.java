@@ -23,7 +23,7 @@ public record PersonData(String keycloakUserId, String vorname, String nachname,
         json.put("vorname", vorname);
         json.put("nachname", nachname);
         json.put("email", email);
-        json.put("geburtstag", geburtstag.toString());
+        json.put("geburtstag", geburtstag != null ? geburtstag.toString() : null);
         json.put("externalId", externalId);
 
         return json;
