@@ -1,25 +1,31 @@
 package com.spsh.ldap;
 
+import com.spsh.ldap.dto.ErwinRollenArt;
+import com.spsh.ldap.dto.KlasseData;
+import com.spsh.ldap.dto.LdapImportData;
+import com.spsh.ldap.dto.PersonData;
+import com.spsh.ldap.dto.SchuleData;
+import org.jboss.logging.Logger;
+import org.keycloak.common.util.MultivaluedHashMap;
+import org.keycloak.component.ComponentModel;
+import org.keycloak.models.GroupProvider;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.RoleProvider;
+import org.keycloak.models.UserModel;
+import org.keycloak.storage.ldap.LDAPStorageProvider;
+import org.keycloak.storage.ldap.idm.model.LDAPObject;
+import org.keycloak.storage.ldap.idm.query.internal.LDAPQuery;
+import org.keycloak.storage.ldap.idm.query.internal.LDAPQueryConditionsBuilder;
+import org.keycloak.storage.ldap.mappers.AbstractLDAPStorageMapper;
+
+import javax.naming.directory.SearchControls;
+import javax.naming.ldap.Rdn;
 import java.io.IOException;
 import java.net.URI;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
-
-import javax.naming.directory.SearchControls;
-import javax.naming.ldap.Rdn;
-
-import com.spsh.ldap.dto.*;
-import org.jboss.logging.Logger;
-import org.keycloak.common.util.MultivaluedHashMap;
-import org.keycloak.component.ComponentModel;
-import org.keycloak.models.*;
-import org.keycloak.storage.ldap.LDAPStorageProvider;
-import org.keycloak.storage.ldap.idm.model.LDAPObject;
-import org.keycloak.storage.ldap.idm.query.internal.LDAPQuery;
-import org.keycloak.storage.ldap.idm.query.internal.LDAPQueryConditionsBuilder;
-import org.keycloak.storage.ldap.mappers.AbstractLDAPStorageMapper;
 
 import static com.spsh.ldap.ErwinLdapMapperConfig.*;
 
