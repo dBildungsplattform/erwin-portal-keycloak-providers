@@ -164,7 +164,7 @@ public class ErwinLdapMapperConfig {
                 .required(true)
                 .add()
 
-                // Base DN/OU for rollen (for mapping tyep 'Group member')
+                // Base DN/OU for rollen (for mapping type 'Group member')
                 .property()
                 .name(CONFIG_KEY_ROLLE_OU)
                 .label("OU of roles")
