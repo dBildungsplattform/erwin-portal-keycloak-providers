@@ -94,10 +94,21 @@ public class ErwinPortalLdapStorageMapper extends AbstractLDAPStorageMapper {
     }
 
     private void applyKlasse(final UserModel user, final RealmModel realm, final KlasseData klasse) {
+        if (klasse == null) {
+            LOGGER.warnf("Can't apply klasse for user %s. Klasse data is null", user.getId());
+            return;
+        }
+
+        final var klasseName = klasse.name();
+        if (klasseName == null || klasseName.isBlank()) {
+            LOGGER.warnf("Can't apply klasse for user %s. Klasse name is null or blank", user.getId());
+            return;
+        }
+
         var groupModel = groupProvider.getGroupsStream(realm)
-                .filter(gm -> gm.getName().equals(klasse.name()))
+                .filter(gm -> gm.getName().equals(klasseName))
                 .findFirst()
-                .orElseGet(() -> groupProvider.createGroup(realm, klasse.name()));
+                .orElseGet(() -> groupProvider.createGroup(realm, klasseName));
 
         user.joinGroup(groupModel);
 
@@ -200,6 +211,11 @@ public class ErwinPortalLdapStorageMapper extends AbstractLDAPStorageMapper {
             query.addWhereCondition(LDAP_QUERY_CONDITIONS_BUILDER.equal(memberAttr, user.getDn()));
 
             final var result = query.getFirstResult();
+            if (result == null) {
+                LOGGER.warnf("No role group found for userDn: %s in search base: %s", user.getDn(), searchBase);
+                return null;
+            }
+
             final var roleNameAttr = config.getFirst(CONFIG_KEY_ROLLE_NAME_ATTR);
             final var role = readAttributeOrRdn(result, roleNameAttr).orElse(null);
 
