@@ -3,15 +3,16 @@ package com.spsh.ldap;
 import java.util.List;
 
 import org.keycloak.component.ComponentModel;
-import org.keycloak.models.KeycloakSession;
 import org.keycloak.provider.ProviderConfigProperty;
-import org.keycloak.storage.ldap.mappers.LDAPStorageMapperFactory;
+import org.keycloak.storage.ldap.LDAPStorageProvider;
+import org.keycloak.storage.ldap.mappers.AbstractLDAPStorageMapper;
+import org.keycloak.storage.ldap.mappers.AbstractLDAPStorageMapperFactory;
 
-public class ErwinPortalLdapStorageMapperFactory implements LDAPStorageMapperFactory<ErwinPortalLdapStorageMapper> {
+public class ErwinPortalLdapStorageMapperFactory extends AbstractLDAPStorageMapperFactory {
 
     @Override
-    public ErwinPortalLdapStorageMapper create(KeycloakSession session, ComponentModel model) {
-        return new ErwinPortalLdapStorageMapper(session, model);
+    protected AbstractLDAPStorageMapper createMapper(ComponentModel mapperModel, LDAPStorageProvider federationProvider) {
+        return new ErwinPortalLdapStorageMapper(mapperModel, federationProvider);
     }
 
     @Override
@@ -21,7 +22,7 @@ public class ErwinPortalLdapStorageMapperFactory implements LDAPStorageMapperFac
     
     @Override
     public List<ProviderConfigProperty> getConfigProperties() {
-        return ErwinPortalLdapStorageMapper.CONFIG_PROPERTIES;
+        return ErwinLdapMapperConfig.CONFIG_PROPERTIES;
     }
     
 }
