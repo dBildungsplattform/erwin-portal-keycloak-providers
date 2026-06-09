@@ -2,6 +2,8 @@ package com.spsh.oidc;
 
 import java.util.*;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.spsh.oidc.dto.FetchUrlResponse;
 import com.spsh.util.JsonHelper;
 import jakarta.ws.rs.NotFoundException;
@@ -145,14 +147,14 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
                     long fetchedAt = Long.parseLong(ts);
                     if ((now - fetchedAt) <= cacheTtlSec * 1000L) {
                         LOGGER.debug("cache valid, extracting response...");
-                        FetchUrlResponse response = extractValueOrHandleMissing(cached, jsonPath, ignoreMissing, failMode);
-                        if (response != null || ignoreMissing) {
+                        // FetchUrlResponse response = extractValueOrHandleMissing(cached, jsonPath, ignoreMissing, failMode);
+                        // if (response != null || ignoreMissing) {
                             LOGGER.debug("response successfully extracted, on to mapping...");
-                            assignRoleToUser(user, clientSessionCtx, response);
-                            mapValue(token, mappingModel, response);
+                            // assignRoleToUser(user, clientSessionCtx, response);
+                            mapValue(token, mappingModel, cached);
                             LOGGER.debug("response successfully mapped, exiting");
                             return;
-                        }
+                        // }
                     }
                 } catch (Exception e) {
                     LOGGER.debug("Cache parse/expiry failed; fetching fresh.", e);
@@ -163,14 +165,15 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
             String json = ApiFetchHelper.fetchApiData(
                     fetchUrl, userId, headerName, timeoutMs
             );
-            FetchUrlResponse response = extractValueOrHandleMissing(json, jsonPath, ignoreMissing, failMode);
+            // FetchUrlResponse response = extractValueOrHandleMissing(json, jsonPath, ignoreMissing, failMode);
 
-            if (response == null && ignoreMissing) {
+            if (json == null && ignoreMissing) {
                 LOGGER.debug("no items found in the fetchUrlResponse, exiting");
                 throw new NotFoundException("Client name does not exist");
             }
-            assignRoleToUser(user, clientSessionCtx, response);
-            mapValue(token, mappingModel, response);
+
+            // assignRoleToUser(user, clientSessionCtx, response);
+            mapValue(token, mappingModel, json);
 
             try {
                 userSession.setNote(cacheValKey, json);
@@ -215,10 +218,16 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
         return jsonValue;
     }
 
-    private static void mapValue(IDToken token, ProtocolMapperModel model, FetchUrlResponse response) {
-        if (response == null) return;
+    private static void mapValue(IDToken token, ProtocolMapperModel model, String json) {
+        if (json == null) return;
 
-        OIDCAttributeMapperHelper.mapClaim(token, model, response);
+        try {
+            final var jsonObj = new ObjectMapper().readTree(json);
+            OIDCAttributeMapperHelper.mapClaim(token, model, jsonObj);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+
     }
 
     private static void assignRoleToUser(UserModel user,
