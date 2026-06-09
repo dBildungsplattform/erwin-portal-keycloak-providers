@@ -1,8 +1,6 @@
 package com.spsh.oidc;
 
 import java.util.*;
-import java.util.concurrent.Callable;
-import java.util.stream.Collectors;
 
 import com.spsh.oidc.dto.FetchUrlResponse;
 import com.spsh.util.JsonHelper;
@@ -22,13 +20,9 @@ import com.spsh.util.ApiFetchHelper;
 import jakarta.ws.rs.InternalServerErrorException;
 
 import static java.lang.Integer.parseInt;
-import static org.keycloak.protocol.ProtocolMapperUtils.MULTIVALUED;
-import static org.keycloak.protocol.ProtocolMapperUtils.MULTIVALUED_LABEL;
-import static org.keycloak.protocol.ProtocolMapperUtils.MULTIVALUED_HELP_TEXT;
 
 
 public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OIDCAccessTokenMapper, OIDCIDTokenMapper, UserInfoTokenMapper {
-
 
     public static final String ENV_KEY_INTERNAL_COMMUNICATION_API_KEY = "INTERNAL_COMMUNICATION_API_KEY";
     public static final String PROVIDER_ID = "spsh-custom-oidc-api-mapper";
@@ -48,13 +42,6 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
         OIDCAttributeMapperHelper.addTokenClaimNameConfig(configProperties);
         OIDCAttributeMapperHelper.addIncludeInTokensConfig(configProperties, SpshApiOidcMapper.class);
         OIDCAttributeMapperHelper.addJsonTypeConfig(configProperties);
-
-        ProviderConfigProperty multivaluedProperty = new ProviderConfigProperty();
-        multivaluedProperty.setName(MULTIVALUED);
-        multivaluedProperty.setLabel(MULTIVALUED_LABEL);
-        multivaluedProperty.setType(ProviderConfigProperty.BOOLEAN_TYPE);
-        multivaluedProperty.setHelpText(MULTIVALUED_HELP_TEXT);
-        configProperties.add(multivaluedProperty);
 
         ProviderConfigProperty fetchUrlProperty = new ProviderConfigProperty();
         fetchUrlProperty.setName(FETCH_URL);
@@ -114,14 +101,13 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
 
         final Map<String, String> config = mappingModel.getConfig();
 
-        final String fetchUrl        = config.get(FETCH_URL);
-        final String jsonPath        = config.get(EXTRACT_JSON_PATH);
-        final boolean ignoreMissing  = Boolean.parseBoolean(config.getOrDefault(IGNORE_MISSING_PATH, "false"));
-        final boolean multivalued    = Boolean.parseBoolean(config.getOrDefault(MULTIVALUED, "false"));
-        final String  failMode       = config.getOrDefault(FAIL_MODE, "deny");
-        final int     timeoutMs      = parseInt(config.getOrDefault(TIMEOUT_MS, "1500"));
-        final int     cacheTtlSec    = parseInt(config.getOrDefault(CACHE_TTL_SECONDS, "60"));
-        final String  headerName     = config.getOrDefault(AUTH_HEADER_NAME, "api-key");
+        final String fetchUrl = config.get(FETCH_URL);
+        final String jsonPath = config.get(EXTRACT_JSON_PATH);
+        final boolean ignoreMissing = Boolean.parseBoolean(config.getOrDefault(IGNORE_MISSING_PATH, "false"));
+        final String failMode = config.getOrDefault(FAIL_MODE, "deny");
+        final int timeoutMs = parseInt(config.getOrDefault(TIMEOUT_MS, "1500"));
+        final int cacheTtlSec = parseInt(config.getOrDefault(CACHE_TTL_SECONDS, "60"));
+        final String headerName = config.getOrDefault(AUTH_HEADER_NAME, "api-key");
         final UserModel user = (userSession != null) ? userSession.getUser() : null;
 
         if (user == null) return;
@@ -145,17 +131,8 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
             throw new NotFoundException("SpshApiOidcMapper: userId is null. No data will be fetched, extracted and mapped.");
         }
 
-        final var kcClientSession = clientSessionCtx.getClientSession();
-        final var clientModel     = kcClientSession.getClient();
-        final String clientName         = clientModel.getName();
-
-        if (isBlank(clientName)) {
-         LOGGER.warn("client name does not exist, throwing error...");
-         throw new IllegalArgumentException("Client name does not exist");
-        }
-
         final String cacheValKey = "spsh_mapper_cache_value_" + mappingModel.getId();
-        final String cacheTsKey  = "spsh_mapper_cache_ts_" + mappingModel.getId();
+        final String cacheTsKey = "spsh_mapper_cache_ts_" + mappingModel.getId();
 
         try {
             LOGGER.debug("retrieving info from cache if valid");
@@ -184,7 +161,7 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
             }
 
             String json = ApiFetchHelper.fetchApiData(
-                    fetchUrl, userId, clientName, headerName, timeoutMs
+                    fetchUrl, userId, headerName, timeoutMs
             );
             FetchUrlResponse response = extractValueOrHandleMissing(json, jsonPath, ignoreMissing, failMode);
 
@@ -216,18 +193,21 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
 
     /* Helper classes for data manipulation */
 
-    private static boolean isBlank(String s) { return s == null || s.isBlank(); }
-
     private static FetchUrlResponse extractValueOrHandleMissing(String json, String jsonPath, boolean ignoreMissing, String failMode) {
         boolean exists = JsonHelper.isPathExisting(json, jsonPath);
         if (!exists) {
-            if (ignoreMissing) return null;
+            if (ignoreMissing) {
+                return null;
+            }
+
             if ("deny".equalsIgnoreCase(failMode)) {
                 throw new InternalServerErrorException("JSONPath " + jsonPath + " not found in backend response.");
             }
+
             LOGGER.warnf("JSONPath %s not found; skipping per failMode=allowNoClaim.", jsonPath);
             return null;
         }
+
         FetchUrlResponse jsonValue = JsonHelper.extractFromJson(json);
         if (jsonValue == null) {
             LOGGER.warn("extracted FetchURL response is null");

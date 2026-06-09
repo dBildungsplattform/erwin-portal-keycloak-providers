@@ -12,6 +12,7 @@ import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 
 import org.apache.hc.core5.util.Timeout;
+import org.json.JSONObject;
 
 public class ApiFetchHelper {
 
@@ -45,10 +46,9 @@ public class ApiFetchHelper {
     }
 
     public static String fetchApiData(String url,
-            String userId,
-            String clientName,
-            String headerName,
-            int timeoutMs) throws IOException {
+                                      String userId,
+                                      String headerName,
+                                      int timeoutMs) throws IOException {
 
         String apiKey = System.getenv(ENV_KEY_INTERNAL_COMMUNICATION_API_KEY);
         if (apiKey == null || apiKey.isEmpty()) {
@@ -69,12 +69,10 @@ public class ApiFetchHelper {
             request.setHeader("Content-Type", "application/json");
             request.setHeader(header, apiKey);
 
-            String payload = "{"
-                    + "\"userId\":" + JsonHelper.jsonString(userId) + ","
-                    + "\"clientName\":" + JsonHelper.jsonString(clientName)
-                    + "}";
+            JSONObject payloadObj = new JSONObject();
+            payloadObj.put("keycloakUserId", userId);
 
-            request.setEntity(new StringEntity(payload));
+            request.setEntity(new StringEntity(payloadObj.toString()));
 
             return httpClient.execute(request, response -> {
                 int statusCode = response.getCode();

@@ -20,7 +20,6 @@ import com.spsh.util.ApiFetchHelper;
 
 public class SpshApiSamlMapper extends AbstractSAMLProtocolMapper implements SAMLAttributeStatementMapper {
 
-    public static final String ENV_KEY_INTERNAL_COMMUNICATION_API_KEY = "INTERNAL_COMMUNICATION_API_KEY";
     public static final String PROVIDER_ID = "spsh-custom-saml-api-mapper";
     public static final String FETCH_URL = "fetchUrl";
     public static final String EXTRACT_JSON_PATH = "extractJsonPath";
