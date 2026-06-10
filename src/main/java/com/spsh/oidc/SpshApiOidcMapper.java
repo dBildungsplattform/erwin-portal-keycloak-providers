@@ -225,7 +225,7 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
             final var jsonObj = new ObjectMapper().readTree(json);
 
             final var person = jsonObj.get("personData");
-            final var schule = jsonObj.get("schuleData  ");
+            final var schule = jsonObj.get("schuleData");
             final var klassen = jsonObj.get("klasseData");
 
             token.setOtherClaims("person", person);
