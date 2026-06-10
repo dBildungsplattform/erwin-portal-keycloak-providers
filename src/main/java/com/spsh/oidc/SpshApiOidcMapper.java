@@ -151,7 +151,7 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
                         // if (response != null || ignoreMissing) {
                             LOGGER.debug("response successfully extracted, on to mapping...");
                             // assignRoleToUser(user, clientSessionCtx, response);
-                            mapValue(token, mappingModel, cached);
+                            mapValue(token, cached);
                             LOGGER.debug("response successfully mapped, exiting");
                             return;
                         // }
@@ -173,7 +173,7 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
             }
 
             // assignRoleToUser(user, clientSessionCtx, response);
-            mapValue(token, mappingModel, json);
+            mapValue(token, json);
 
             try {
                 userSession.setNote(cacheValKey, json);
@@ -218,12 +218,19 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
         return jsonValue;
     }
 
-    private static void mapValue(IDToken token, ProtocolMapperModel model, String json) {
+    private static void mapValue(IDToken token, String json) {
         if (json == null) return;
 
         try {
             final var jsonObj = new ObjectMapper().readTree(json);
-            OIDCAttributeMapperHelper.mapClaim(token, model, jsonObj);
+
+            final var person = jsonObj.get("personData");
+            final var schule = jsonObj.get("schuleData  ");
+            final var klassen = jsonObj.get("klasseData");
+
+            token.setOtherClaims("person", person);
+            token.setOtherClaims("schule", schule);
+            token.setOtherClaims("klassen", klassen);
         } catch (JsonProcessingException e) {
             throw new RuntimeException(e);
         }
