@@ -45,18 +45,15 @@ public class ApiFetchHelper {
         }
     }
 
-    public static String fetchApiData(String url,
-                                      String userId,
-                                      String headerName,
-                                      int timeoutMs) throws IOException {
+    public static String fetchApiData(final String url,
+                                      final String userId,
+                                      final int timeoutMs) throws IOException {
 
         String apiKey = System.getenv(ENV_KEY_INTERNAL_COMMUNICATION_API_KEY);
         if (apiKey == null || apiKey.isEmpty()) {
             throw new IOException(String.format("Environment variable %s is not set or is empty.",
                     ENV_KEY_INTERNAL_COMMUNICATION_API_KEY));
         }
-
-        String header = (headerName == null || headerName.isBlank()) ? "api-key" : headerName;
 
         RequestConfig requestConfig = RequestConfig.custom()
                 .setConnectTimeout(Timeout.ofMilliseconds(timeoutMs))
@@ -67,7 +64,7 @@ public class ApiFetchHelper {
 
             HttpPost request = new HttpPost(url);
             request.setHeader("Content-Type", "application/json");
-            request.setHeader(header, apiKey);
+            request.setHeader("api-key", apiKey);
 
             JSONObject payloadObj = new JSONObject();
             payloadObj.put("keycloakUserId", userId);

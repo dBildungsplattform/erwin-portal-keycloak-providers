@@ -1,12 +1,10 @@
 package com.spsh.oidc;
 
+import java.io.IOException;
 import java.util.*;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.spsh.oidc.dto.FetchUrlResponse;
-import com.spsh.util.JsonHelper;
-import jakarta.ws.rs.NotFoundException;
 import org.jboss.logging.Logger;
 import org.keycloak.models.*;
 import org.keycloak.protocol.oidc.mappers.AbstractOIDCProtocolMapper;
@@ -19,26 +17,19 @@ import org.keycloak.representations.IDToken;
 
 import com.spsh.util.ApiFetchHelper;
 
-import jakarta.ws.rs.InternalServerErrorException;
-
 import static java.lang.Integer.parseInt;
-
 
 public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OIDCAccessTokenMapper, OIDCIDTokenMapper, UserInfoTokenMapper {
 
-    public static final String ENV_KEY_INTERNAL_COMMUNICATION_API_KEY = "INTERNAL_COMMUNICATION_API_KEY";
-    public static final String PROVIDER_ID = "spsh-custom-oidc-api-mapper";
-    public static final String FETCH_URL = "fetchUrl";
-    public static final String EXTRACT_JSON_PATH = "extractJsonPath";
-    public static final String IGNORE_MISSING_PATH = "ignoreMissingPath";
-    private static final List<ProviderConfigProperty> configProperties = new ArrayList<>();
     private static final Logger LOGGER = Logger.getLogger(SpshApiOidcMapper.class);
 
+    public static final String PROVIDER_ID = "spsh-custom-oidc-api-mapper";
 
+    private static final List<ProviderConfigProperty> configProperties = new ArrayList<>();
+
+    public static final String FETCH_URL = "fetchUrl";
     public static final String TIMEOUT_MS = "timeoutMs";
     public static final String CACHE_TTL_SECONDS = "cacheTtlSeconds";
-    public static final String FAIL_MODE = "failMode";
-    public static final String AUTH_HEADER_NAME = "authHeaderName";
 
     static {
         OIDCAttributeMapperHelper.addTokenClaimNameConfig(configProperties);
@@ -47,26 +38,26 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
 
         ProviderConfigProperty fetchUrlProperty = new ProviderConfigProperty();
         fetchUrlProperty.setName(FETCH_URL);
-        fetchUrlProperty.setLabel("SPSH Fetch Url");
+        fetchUrlProperty.setLabel("Erwin Fetch Url");
         fetchUrlProperty.setType(ProviderConfigProperty.STRING_TYPE);
         fetchUrlProperty.setHelpText("The URL to fetch data from the SPSH Backend.");
         configProperties.add(fetchUrlProperty);
 
-        ProviderConfigProperty extractPathProperty = new ProviderConfigProperty();
-        extractPathProperty.setName(EXTRACT_JSON_PATH);
-        extractPathProperty.setLabel("SPSH Extract Json Path");
-        extractPathProperty.setType(ProviderConfigProperty.STRING_TYPE);
-        extractPathProperty.setHelpText("The JSON path to extract data from the API response.");
-        configProperties.add(extractPathProperty);
+        ProviderConfigProperty timeoutMsProperty = new ProviderConfigProperty();
+        timeoutMsProperty.setName(TIMEOUT_MS);
+        timeoutMsProperty.setLabel("Fetch timeout ms");
+        timeoutMsProperty.setType(ProviderConfigProperty.INTEGER_TYPE);
+        timeoutMsProperty.setHelpText("The fetch timeout in milliseconds");
+        timeoutMsProperty.setDefaultValue("1500");
+        configProperties.add(timeoutMsProperty);
 
-        ProviderConfigProperty ignoreMissingPathProperty = new ProviderConfigProperty();
-        ignoreMissingPathProperty.setName(IGNORE_MISSING_PATH);
-        ignoreMissingPathProperty.setLabel("SPSH Ignore Missing Path");
-        ignoreMissingPathProperty.setType(ProviderConfigProperty.BOOLEAN_TYPE);
-        ignoreMissingPathProperty.setHelpText("If JSON Path cannot be found in response received from Backend, do not throw an error, just ignore it.");
-        configProperties.add(ignoreMissingPathProperty);
-
-
+        ProviderConfigProperty cacheTtlProperty = new ProviderConfigProperty();
+        cacheTtlProperty.setName(CACHE_TTL_SECONDS);
+        cacheTtlProperty.setLabel("Cache TTL seconds");
+        cacheTtlProperty.setType(ProviderConfigProperty.INTEGER_TYPE);
+        cacheTtlProperty.setHelpText("The cache lifetime in seconds");
+        cacheTtlProperty.setDefaultValue("60");
+        configProperties.add(cacheTtlProperty);
     }
 
     @Override
@@ -95,131 +86,98 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
     }
 
     @Override
-    protected void setClaim(IDToken token,
-                            ProtocolMapperModel mappingModel,
-                            UserSessionModel userSession,
-                            KeycloakSession keycloakSession,
-                            ClientSessionContext clientSessionCtx) throws IllegalArgumentException, NotFoundException {
+    protected void setClaim(IDToken token, ProtocolMapperModel mappingModel, UserSessionModel userSession, KeycloakSession keycloakSession, ClientSessionContext clientSessionCtx) {
+        final var config = mappingModel.getConfig();
 
-        final Map<String, String> config = mappingModel.getConfig();
-
-        final String fetchUrl = config.get(FETCH_URL);
-        final String jsonPath = config.get(EXTRACT_JSON_PATH);
-        final boolean ignoreMissing = Boolean.parseBoolean(config.getOrDefault(IGNORE_MISSING_PATH, "false"));
-        final String failMode = config.getOrDefault(FAIL_MODE, "deny");
-        final int timeoutMs = parseInt(config.getOrDefault(TIMEOUT_MS, "1500"));
-        final int cacheTtlSec = parseInt(config.getOrDefault(CACHE_TTL_SECONDS, "60"));
-        final String headerName = config.getOrDefault(AUTH_HEADER_NAME, "api-key");
-        final UserModel user = (userSession != null) ? userSession.getUser() : null;
-
-        if (user == null) return;
-
-        final String userId = user.getId();
-
-        LOGGER.info(String.format("Setting claims via custom SpshApiOidcMapper for userSub: %s", userId));
-        LOGGER.debug(String.format("Using fetchUrl: %s", fetchUrl));
-        LOGGER.debug(String.format("Using user with the following userId: %s", userId));
-
+        final var fetchUrl = config.get(FETCH_URL);
         if (fetchUrl == null) {
             LOGGER.warn("SpshApiOidcMapper: fetchUrl is null. No data will be fetched, extracted and mapped.");
-            throw new NotFoundException("SpshApiOidcMapper: fetchUrl is null. No data will be fetched, extracted and mapped.");
+            throw new IllegalArgumentException("SpshApiOidcMapper: fetchUrl is null. No data will be fetched, extracted and mapped.");
         }
-        if (jsonPath == null) {
-            LOGGER.warn("SpshApiOidcMapper: jsonPath is null. No data will be fetched, extracted and mapped.");
-            throw new NotFoundException("SpshApiOidcMapper: jsonPath is null. No data will be fetched, extracted and mapped.");
+
+        final int timeoutMs = parseInt(config.getOrDefault(TIMEOUT_MS, "1500"));
+        final int cacheTtlSec = parseInt(config.getOrDefault(CACHE_TTL_SECONDS, "60"));
+
+        final UserModel user = (userSession != null) ? userSession.getUser() : null;
+        if (user == null) {
+            return;
         }
+
+        final var userId = user.getId();
         if (userId == null) {
             LOGGER.warn("SpshApiOidcMapper: userId is null. No data will be fetched, extracted and mapped.");
-            throw new NotFoundException("SpshApiOidcMapper: userId is null. No data will be fetched, extracted and mapped.");
+            throw new IllegalArgumentException("SpshApiOidcMapper: userId is null. No data will be fetched, extracted and mapped.");
         }
+        LOGGER.info(String.format("Setting claims via custom SpshApiOidcMapper for userSub: %s", userId));
+        LOGGER.debug(String.format("Using fetchUrl: %s", fetchUrl));
 
-        final String cacheValKey = "spsh_mapper_cache_value_" + mappingModel.getId();
-        final String cacheTsKey = "spsh_mapper_cache_ts_" + mappingModel.getId();
+        final var cacheValKey = "spsh_mapper_cache_value_" + mappingModel.getId();
+        final var cacheTsKey = "spsh_mapper_cache_ts_" + mappingModel.getId();
 
         try {
-            LOGGER.debug("retrieving info from cache if valid");
-            String cached = userSession.getNote(cacheValKey);
-            String ts = userSession.getNote(cacheTsKey);
-            long now = System.currentTimeMillis();
-            if (cached != null && ts != null) {
-                try {
-                    LOGGER.debug("cache found, testing validity...");
-                    long fetchedAt = Long.parseLong(ts);
-                    if ((now - fetchedAt) <= cacheTtlSec * 1000L) {
-                        LOGGER.debug("cache valid, extracting response...");
-                        // FetchUrlResponse response = extractValueOrHandleMissing(cached, jsonPath, ignoreMissing, failMode);
-                        // if (response != null || ignoreMissing) {
-                            LOGGER.debug("response successfully extracted, on to mapping...");
-                            // assignRoleToUser(user, clientSessionCtx, response);
-                            mapValue(token, cached);
-                            LOGGER.debug("response successfully mapped, exiting");
-                            return;
-                        // }
-                    }
-                } catch (Exception e) {
-                    LOGGER.debug("Cache parse/expiry failed; fetching fresh.", e);
-                    throw new Exception(e);
-                }
-            }
+            final var cached = getCachedData(userSession, cacheTtlSec, cacheValKey, cacheTsKey);
 
-            String json = ApiFetchHelper.fetchApiData(
-                    fetchUrl, userId, headerName, timeoutMs
-            );
-            // FetchUrlResponse response = extractValueOrHandleMissing(json, jsonPath, ignoreMissing, failMode);
-
-            if (json == null && ignoreMissing) {
-                LOGGER.debug("no items found in the fetchUrlResponse, exiting");
-                throw new NotFoundException("Client name does not exist");
-            }
-
-            // assignRoleToUser(user, clientSessionCtx, response);
-            mapValue(token, json);
-
-            try {
-                userSession.setNote(cacheValKey, json);
-                userSession.setNote(cacheTsKey, Long.toString(System.currentTimeMillis()));
-            } catch (Exception e) {
-                LOGGER.debug("Failed to write session cache.", e);
-            }
-
-        } catch (Exception e) {
-            if ("deny".equalsIgnoreCase(failMode)) {
-                LOGGER.error("SpshApiOidcMapper: backend fetch/mapping failed; denying token issuance.", e);
-                throw (e instanceof InternalServerErrorException)
-                        ? (InternalServerErrorException) e
-                        : new InternalServerErrorException("SpshApiOidcMapper failed", e);
+            final String dataToMap;
+            if (cached == null) {
+                dataToMap = fetchDataFromServer(fetchUrl, userId, timeoutMs);
+                writeCacheInUserSession(userSession, dataToMap, cacheValKey, cacheTsKey);
             } else {
-                LOGGER.warn("SpshApiOidcMapper: backend fetch/mapping failed; skipping claim per failMode=allowNoClaim.", e);
+                dataToMap = cached;
             }
+
+            mapClaimsToToken(token, dataToMap);
+        } catch (Exception e) {
+            LOGGER.error("SpshApiOidcMapper: backend fetch/mapping failed; denying token issuance.", e);
+            throw new UnsupportedOperationException("Token Claim Mapping failed", e);
         }
     }
 
-    /* Helper classes for data manipulation */
+    private String getCachedData(final UserSessionModel userSession, final int cacheTtlSec, final String cacheValKey, final String cacheTsKey) {
+        LOGGER.debug("retrieving info from cache if valid");
 
-    private static FetchUrlResponse extractValueOrHandleMissing(String json, String jsonPath, boolean ignoreMissing, String failMode) {
-        boolean exists = JsonHelper.isPathExisting(json, jsonPath);
-        if (!exists) {
-            if (ignoreMissing) {
-                return null;
+        final var cached = userSession.getNote(cacheValKey);
+        final var ts = userSession.getNote(cacheTsKey);
+        final var now = System.currentTimeMillis();
+
+        if (cached != null && ts != null) {
+            LOGGER.debug("cache found, testing validity");
+
+            final var fetchedAt = Long.parseLong(ts);
+            if ((now - fetchedAt) <= cacheTtlSec * 1000L) {
+                LOGGER.debug("cache valid, returning");
+
+                return cached;
             }
-
-            if ("deny".equalsIgnoreCase(failMode)) {
-                throw new InternalServerErrorException("JSONPath " + jsonPath + " not found in backend response.");
-            }
-
-            LOGGER.warnf("JSONPath %s not found; skipping per failMode=allowNoClaim.", jsonPath);
-            return null;
         }
 
-        FetchUrlResponse jsonValue = JsonHelper.extractFromJson(json);
-        if (jsonValue == null) {
-            LOGGER.warn("extracted FetchURL response is null");
-        }
-        return jsonValue;
+        LOGGER.debug("no cache found");
+
+        return null;
     }
 
-    private static void mapValue(IDToken token, String json) {
-        if (json == null) return;
+    private String fetchDataFromServer(final String fetchUrl, final String userId, final int timeoutMs) throws IOException {
+        final var json = ApiFetchHelper.fetchApiData(fetchUrl, userId, timeoutMs);
+
+        if (json == null) {
+            throw new IOException("Couldn't fetch data from server");
+        }
+
+        return json;
+    }
+
+    private void writeCacheInUserSession(final UserSessionModel userSession, final String json, final String cacheValKey, final String cacheTsKey) {
+        try {
+            userSession.setNote(cacheValKey, json);
+            userSession.setNote(cacheTsKey, Long.toString(System.currentTimeMillis()));
+        } catch (Exception e) {
+            LOGGER.debug("Failed to write session cache.", e);
+        }
+    }
+
+    private static void mapClaimsToToken(final IDToken token, final String json) {
+        if (json == null) {
+            return;
+        }
 
         try {
             final var jsonObj = new ObjectMapper().readTree(json);
@@ -232,31 +190,7 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
             token.setOtherClaims("schule", schule);
             token.setOtherClaims("klassen", klassen);
         } catch (JsonProcessingException e) {
-            throw new RuntimeException(e);
-        }
-
-    }
-
-    private static void assignRoleToUser(UserModel user,
-                                         ClientSessionContext clientCtx,
-                                         FetchUrlResponse response) {
-        if (response == null) return;
-
-        String roleName = response.getMapToLmsRolle().trim();
-        if (roleName.isEmpty()) return;
-
-        ClientModel client = clientCtx.getClientSession().getClient();
-        RoleModel role = client.getRole(roleName);
-
-        if (role == null) {
-            LOGGER.warnf("Role '%s' not found in client '%s'; skipping.", roleName, client.getClientId());
-            return;
-        }
-
-        if (!user.hasRole(role)) {
-            user.grantRole(role);
-            LOGGER.infof("Granted role '%s' to user '%s'.", roleName, user.getUsername());
+            throw new IllegalArgumentException("Can't parse json from token data endpoint", e);
         }
     }
-
 }

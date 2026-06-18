@@ -3,19 +3,15 @@ package com.spsh.oidc;
 import com.spsh.oidc.dto.FetchUrlResponse;
 import com.spsh.util.ApiFetchHelper;
 import com.spsh.util.JsonHelper;
-import jakarta.ws.rs.InternalServerErrorException;
-import jakarta.ws.rs.NotFoundException;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.keycloak.models.*;
-import org.keycloak.protocol.oidc.mappers.OIDCAttributeMapperHelper;
 import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.representations.IDToken;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.MockitoJUnitRunner;
 
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -64,13 +60,9 @@ public class SpshApiOidcMapperTest {
     private Map<String, String> baseConfig() {
         Map<String, String> config = new HashMap<>();
         config.put(FETCH_URL, "https://example.com/api");
-        config.put(EXTRACT_JSON_PATH, "$.path");
-        config.put(IGNORE_MISSING_PATH, "false");
         config.put(MULTIVALUED, "false");
-        config.put(FAIL_MODE, "deny");
         config.put(TIMEOUT_MS, "1500");
         config.put(CACHE_TTL_SECONDS, "60");
-        config.put(AUTH_HEADER_NAME, "api-key");
         return config;
     }
 
@@ -80,12 +72,6 @@ public class SpshApiOidcMapperTest {
 
         when(userSession.getUser()).thenReturn(user);
         when(user.getId()).thenReturn("user-123");
-        when(user.getUsername()).thenReturn("john");
-
-        when(clientSessionCtx.getClientSession()).thenReturn(clientSession);
-        when(clientSession.getClient()).thenReturn(clientModel);
-        when(clientModel.getName()).thenReturn("test-client");
-        when(clientModel.getClientId()).thenReturn("test-client-id");
     }
 
     @Test
@@ -123,7 +109,7 @@ public class SpshApiOidcMapperTest {
         mapper.callSetClaim(new IDToken(), mappingModel, userSession, keycloakSession, clientSessionCtx);
     }
 
-    @Test(expected = NotFoundException.class)
+    @Test(expected = IllegalArgumentException.class)
     public void setClaim_fetchUrlNull_throwsNotFoundException() {
         Map<String, String> config = baseConfig();
         config.remove(FETCH_URL);
@@ -132,29 +118,11 @@ public class SpshApiOidcMapperTest {
         mapper.callSetClaim(new IDToken(), mappingModel, userSession, keycloakSession, clientSessionCtx);
     }
 
-    @Test(expected = NotFoundException.class)
-    public void setClaim_jsonPathNull_throwsNotFoundException() {
-        Map<String, String> config = baseConfig();
-        config.remove(EXTRACT_JSON_PATH);
-        setupCommonMocks(config);
-
-        mapper.callSetClaim(new IDToken(), mappingModel, userSession, keycloakSession, clientSessionCtx);
-    }
-
-    @Test(expected = NotFoundException.class)
+    @Test(expected = IllegalArgumentException.class)
     public void setClaim_userIdNull_throwsNotFoundException() {
         Map<String, String> config = baseConfig();
         setupCommonMocks(config);
         when(user.getId()).thenReturn(null);
-
-        mapper.callSetClaim(new IDToken(), mappingModel, userSession, keycloakSession, clientSessionCtx);
-    }
-
-    @Test(expected = IllegalArgumentException.class)
-    public void setClaim_clientNameBlank_throwsIllegalArgumentException() {
-        Map<String, String> config = baseConfig();
-        setupCommonMocks(config);
-        when(clientModel.getName()).thenReturn("   ");
 
         mapper.callSetClaim(new IDToken(), mappingModel, userSession, keycloakSession, clientSessionCtx);
     }
@@ -170,27 +138,22 @@ public class SpshApiOidcMapperTest {
                 .thenReturn(Long.toString(System.currentTimeMillis()));
 
         try (MockedStatic<JsonHelper> jsonHelperMock = mockStatic(JsonHelper.class);
-             MockedStatic<ApiFetchHelper> apiFetchMock = mockStatic(ApiFetchHelper.class);
-             MockedStatic<OIDCAttributeMapperHelper> oidcMapperMock = mockStatic(OIDCAttributeMapperHelper.class)) {
+             MockedStatic<ApiFetchHelper> apiFetchMock = mockStatic(ApiFetchHelper.class)) {
 
             jsonHelperMock.when(() -> JsonHelper.isPathExisting(anyString(), anyString()))
                     .thenReturn(true);
             jsonHelperMock.when(() -> JsonHelper.extractFromJson(anyString()))
                     .thenReturn(fetchUrlResponse);
-            when(fetchUrlResponse.getMapToLmsRolle()).thenReturn("role-1");
-            when(clientModel.getRole("role-1")).thenReturn(roleModel);
-            when(user.hasRole(roleModel)).thenReturn(false);
 
-            IDToken token = new IDToken();
+            IDToken token = mock(IDToken.class);
 
             mapper.callSetClaim(token, mappingModel, userSession, keycloakSession, clientSessionCtx);
 
             apiFetchMock.verifyNoInteractions();
 
-            oidcMapperMock.verify(() ->
-                    OIDCAttributeMapperHelper.mapClaim(eq(token), eq(mappingModel), eq(fetchUrlResponse)));
-
-            verify(user).grantRole(roleModel);
+            verify(token).setOtherClaims(eq("person"), any());
+            verify(token).setOtherClaims(eq("schule"), any());
+            verify(token).setOtherClaims(eq("klassen"), any());
         }
     }
 
@@ -202,100 +165,30 @@ public class SpshApiOidcMapperTest {
         when(userSession.getNote(anyString())).thenReturn(null);
 
         try (MockedStatic<JsonHelper> jsonHelperMock = mockStatic(JsonHelper.class);
-             MockedStatic<ApiFetchHelper> apiFetchMock = mockStatic(ApiFetchHelper.class);
-             MockedStatic<OIDCAttributeMapperHelper> oidcMapperMock = mockStatic(OIDCAttributeMapperHelper.class)) {
+             MockedStatic<ApiFetchHelper> apiFetchMock = mockStatic(ApiFetchHelper.class)) {
 
             jsonHelperMock.when(() -> JsonHelper.isPathExisting(anyString(), anyString()))
                     .thenReturn(true);
             jsonHelperMock.when(() -> JsonHelper.extractFromJson(anyString()))
                     .thenReturn(fetchUrlResponse);
-            when(fetchUrlResponse.getMapToLmsRolle()).thenReturn("role-1");
-            when(clientModel.getRole("role-1")).thenReturn(roleModel);
-            when(user.hasRole(roleModel)).thenReturn(false);
 
-            apiFetchMock.when(() -> ApiFetchHelper.fetchApiData(anyString(), anyString(), anyString(), anyInt()))
+            apiFetchMock.when(() -> ApiFetchHelper.fetchApiData(anyString(), anyString(), anyInt()))
                     .thenReturn("{\"ok\":true}");
 
-            IDToken token = new IDToken();
+            IDToken token = mock(IDToken.class);
             mapper.callSetClaim(token, mappingModel, userSession, keycloakSession, clientSessionCtx);
 
             apiFetchMock.verify(() -> ApiFetchHelper.fetchApiData(
                     eq("https://example.com/api"),
                     eq("user-123"),
-                    eq("api-key"),
                     eq(1500)));
 
-            verify(user).grantRole(roleModel);
-
-            oidcMapperMock.verify(() ->
-                    OIDCAttributeMapperHelper.mapClaim(eq(token), eq(mappingModel), eq(fetchUrlResponse)));
+            verify(token).setOtherClaims(eq("person"), any());
+            verify(token).setOtherClaims(eq("schule"), any());
+            verify(token).setOtherClaims(eq("klassen"), any());
 
             verify(userSession).setNote(eq("spsh_mapper_cache_value_mapper-id"), anyString());
             verify(userSession).setNote(eq("spsh_mapper_cache_ts_mapper-id"), anyString());
-        }
-    }
-
-    @Test(expected = InternalServerErrorException.class)
-    public void setClaim_ignoreMissingTrue_pathMissing_throwsInternalServerError() {
-        Map<String, String> config = baseConfig();
-        config.put(IGNORE_MISSING_PATH, "true");
-        setupCommonMocks(config);
-
-        when(userSession.getNote(anyString())).thenReturn(null);
-
-        try (MockedStatic<JsonHelper> jsonHelperMock = mockStatic(JsonHelper.class);
-             MockedStatic<ApiFetchHelper> apiFetchMock = mockStatic(ApiFetchHelper.class)) {
-
-            jsonHelperMock.when(() -> JsonHelper.isPathExisting(anyString(), anyString()))
-                    .thenReturn(false);
-
-            apiFetchMock.when(() -> ApiFetchHelper.fetchApiData(anyString(), anyString(), anyString(), anyInt()))
-                    .thenReturn("{\"other\":\"json\"}");
-
-            mapper.callSetClaim(new IDToken(), mappingModel, userSession, keycloakSession, clientSessionCtx);
-        }
-    }
-
-    @Test
-    public void setClaim_failModeAllowNoClaim_pathMissing_doesNotThrow() {
-        Map<String, String> config = baseConfig();
-        config.put(IGNORE_MISSING_PATH, "false");
-        config.put(FAIL_MODE, "allowNoClaim");
-        setupCommonMocks(config);
-
-        when(userSession.getNote(anyString())).thenReturn(null);
-
-        try (MockedStatic<JsonHelper> jsonHelperMock = mockStatic(JsonHelper.class);
-             MockedStatic<ApiFetchHelper> apiFetchMock = mockStatic(ApiFetchHelper.class)) {
-
-            jsonHelperMock.when(() -> JsonHelper.isPathExisting(anyString(), anyString()))
-                    .thenReturn(false);
-
-            apiFetchMock.when(() -> ApiFetchHelper.fetchApiData(anyString(), anyString(), anyString(), anyInt()))
-                    .thenReturn("{\"other\":\"json\"}");
-
-            mapper.callSetClaim(new IDToken(), mappingModel, userSession, keycloakSession, clientSessionCtx);
-        }
-    }
-
-    @Test
-    public void setClaim_backendIOException_failModeAllowNoClaim_skipsClaim() {
-        Map<String, String> config = baseConfig();
-        config.put(FAIL_MODE, "allowNoClaim");
-        setupCommonMocks(config);
-
-        when(userSession.getNote(anyString())).thenReturn(null);
-
-        try (MockedStatic<JsonHelper> jsonHelperMock = mockStatic(JsonHelper.class);
-             MockedStatic<ApiFetchHelper> apiFetchMock = mockStatic(ApiFetchHelper.class)) {
-
-            jsonHelperMock.when(() -> JsonHelper.isPathExisting(anyString(), anyString()))
-                    .thenReturn(true);
-
-            apiFetchMock.when(() -> ApiFetchHelper.fetchApiData(anyString(), anyString(), anyString(), anyInt()))
-                    .thenThrow(new IOException("backend down"));
-
-            mapper.callSetClaim(new IDToken(), mappingModel, userSession, keycloakSession, clientSessionCtx);
         }
     }
 
@@ -312,9 +205,8 @@ public class SpshApiOidcMapperTest {
                     .thenReturn(true);
             jsonHelperMock.when(() -> JsonHelper.extractFromJson(anyString()))
                     .thenReturn(fetchUrlResponse);
-            when(fetchUrlResponse.getMapToLmsRolle()).thenReturn("   ");
 
-            apiFetchMock.when(() -> ApiFetchHelper.fetchApiData(anyString(), anyString(), anyString(), anyInt()))
+            apiFetchMock.when(() -> ApiFetchHelper.fetchApiData(anyString(), anyString(), anyInt()))
                     .thenReturn("{\"ok\":true}");
 
             mapper.callSetClaim(new IDToken(), mappingModel, userSession, keycloakSession, clientSessionCtx);
@@ -336,10 +228,8 @@ public class SpshApiOidcMapperTest {
                     .thenReturn(true);
             jsonHelperMock.when(() -> JsonHelper.extractFromJson(anyString()))
                     .thenReturn(fetchUrlResponse);
-            when(fetchUrlResponse.getMapToLmsRolle()).thenReturn("role-missing");
-            when(clientModel.getRole("role-missing")).thenReturn(null);
 
-            apiFetchMock.when(() -> ApiFetchHelper.fetchApiData(anyString(), anyString(), anyString(), anyInt()))
+            apiFetchMock.when(() -> ApiFetchHelper.fetchApiData(anyString(), anyString(), anyInt()))
                     .thenReturn("{\"ok\":true}");
 
             mapper.callSetClaim(new IDToken(), mappingModel, userSession, keycloakSession, clientSessionCtx);
@@ -361,11 +251,8 @@ public class SpshApiOidcMapperTest {
                     .thenReturn(true);
             jsonHelperMock.when(() -> JsonHelper.extractFromJson(anyString()))
                     .thenReturn(fetchUrlResponse);
-            when(fetchUrlResponse.getMapToLmsRolle()).thenReturn("role-1");
-            when(clientModel.getRole("role-1")).thenReturn(roleModel);
-            when(user.hasRole(roleModel)).thenReturn(true);
 
-            apiFetchMock.when(() -> ApiFetchHelper.fetchApiData(anyString(), anyString(), anyString(), anyInt()))
+            apiFetchMock.when(() -> ApiFetchHelper.fetchApiData(anyString(), anyString(), anyInt()))
                     .thenReturn("{\"ok\":true}");
 
             mapper.callSetClaim(new IDToken(), mappingModel, userSession, keycloakSession, clientSessionCtx);
