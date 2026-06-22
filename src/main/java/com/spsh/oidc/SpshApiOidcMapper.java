@@ -1,6 +1,5 @@
 package com.spsh.oidc;
 
-import java.io.IOException;
 import java.util.*;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -119,7 +118,7 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
 
             final String dataToMap;
             if (cached == null) {
-                dataToMap = fetchDataFromServer(fetchUrl, userId, timeoutMs);
+                dataToMap = ApiFetchHelper.fetchApiData(fetchUrl, userId, timeoutMs);
                 writeCacheInUserSession(userSession, dataToMap, cacheValKey, cacheTsKey);
             } else {
                 dataToMap = cached;
@@ -153,16 +152,6 @@ public class SpshApiOidcMapper extends AbstractOIDCProtocolMapper implements OID
         LOGGER.debug("no cache found");
 
         return null;
-    }
-
-    private String fetchDataFromServer(final String fetchUrl, final String userId, final int timeoutMs) throws IOException {
-        final var json = ApiFetchHelper.fetchApiData(fetchUrl, userId, timeoutMs);
-
-        if (json == null) {
-            throw new IOException("Couldn't fetch data from server");
-        }
-
-        return json;
     }
 
     private void writeCacheInUserSession(final UserSessionModel userSession, final String json, final String cacheValKey, final String cacheTsKey) {

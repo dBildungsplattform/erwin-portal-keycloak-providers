@@ -75,7 +75,12 @@ public class ApiFetchHelper {
                 int statusCode = response.getCode();
                 if (statusCode >= 200 && statusCode < 300) {
                     HttpEntity entity = response.getEntity();
-                    return entity != null ? EntityUtils.toString(entity) : null;
+
+                    if (entity == null) {
+                        throw new IOException("Couldn't fetch data from server");
+                    }
+
+                    return EntityUtils.toString(entity);
                 } else {
                     throw new IOException("Unexpected response status: " + statusCode);
                 }
