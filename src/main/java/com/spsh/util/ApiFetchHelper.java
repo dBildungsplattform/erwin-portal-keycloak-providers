@@ -12,6 +12,7 @@ import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 
 import org.apache.hc.core5.util.Timeout;
+import org.json.JSONObject;
 
 public class ApiFetchHelper {
 
@@ -44,19 +45,15 @@ public class ApiFetchHelper {
         }
     }
 
-    public static String fetchApiData(String url,
-            String userId,
-            String clientName,
-            String headerName,
-            int timeoutMs) throws IOException {
+    public static String fetchApiData(final String url,
+                                      final String userId,
+                                      final int timeoutMs) throws IOException {
 
         String apiKey = System.getenv(ENV_KEY_INTERNAL_COMMUNICATION_API_KEY);
         if (apiKey == null || apiKey.isEmpty()) {
             throw new IOException(String.format("Environment variable %s is not set or is empty.",
                     ENV_KEY_INTERNAL_COMMUNICATION_API_KEY));
         }
-
-        String header = (headerName == null || headerName.isBlank()) ? "api-key" : headerName;
 
         RequestConfig requestConfig = RequestConfig.custom()
                 .setConnectTimeout(Timeout.ofMilliseconds(timeoutMs))
@@ -67,20 +64,23 @@ public class ApiFetchHelper {
 
             HttpPost request = new HttpPost(url);
             request.setHeader("Content-Type", "application/json");
-            request.setHeader(header, apiKey);
+            request.setHeader("api-key", apiKey);
 
-            String payload = "{"
-                    + "\"userId\":" + JsonHelper.jsonString(userId) + ","
-                    + "\"clientName\":" + JsonHelper.jsonString(clientName)
-                    + "}";
+            JSONObject payloadObj = new JSONObject();
+            payloadObj.put("keycloakUserId", userId);
 
-            request.setEntity(new StringEntity(payload));
+            request.setEntity(new StringEntity(payloadObj.toString()));
 
             return httpClient.execute(request, response -> {
                 int statusCode = response.getCode();
                 if (statusCode >= 200 && statusCode < 300) {
                     HttpEntity entity = response.getEntity();
-                    return entity != null ? EntityUtils.toString(entity) : null;
+
+                    if (entity == null) {
+                        throw new IOException("Couldn't fetch data from server");
+                    }
+
+                    return EntityUtils.toString(entity);
                 } else {
                     throw new IOException("Unexpected response status: " + statusCode);
                 }
